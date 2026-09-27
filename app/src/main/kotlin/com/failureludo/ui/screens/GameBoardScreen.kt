@@ -28,10 +28,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.failureludo.ui.tabletop.*
-import androidx.compose.ui.draw.alpha
 import com.failureludo.ui.theme.gardenBackground
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -436,23 +436,24 @@ fun GameBoardScreen(
             titleContentColor = Color(0xFF352440),
             textContentColor = Color(0xFF55455D),
             onDismissRequest = { viewModel.dismissHomeEntryChoice() },
-            title = { Text("Choose your route", fontWeight = FontWeight.Bold) },
+            title = { Text("Which way?", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("This move can enter the finishing path. Choose how this pawn should continue.")
+                Column(Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
                     HomeEntryOptionPreviewCard(
-                        title = "Enter Finish",
-                        description = "Turn into home column and progress toward the center.",
+                        title = "Enter finish",
+                        description = "Toward the center",
+                        identity = pendingHomeEntryChoicePiece!!.color.ordinal,
                         tint = previewTint,
                         enterHomePath = true,
                         onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = true) }
                     )
 
                     HomeEntryOptionPreviewCard(
-                        title = "Keep Circulating",
-                        description = if (canCirculate) "Stay on the main track for another full round."
-                            else "Blocked by a pair or the three-pawn limit.",
+                        title = "Go around",
+                        description = if (canCirculate) "One more lap" else "Blocked",
+                        identity = pendingHomeEntryChoicePiece!!.color.ordinal,
                         enabled = canCirculate,
                         tint = previewTint,
                         enterHomePath = false,
@@ -823,6 +824,7 @@ internal fun buildAnimationPlan(
 private fun HomeEntryOptionPreviewCard(
     title: String,
     description: String,
+    identity: Int,
     tint: Color,
     enterHomePath: Boolean,
     onClick: () -> Unit,
@@ -832,7 +834,6 @@ private fun HomeEntryOptionPreviewCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(if (enabled) 1f else .48f)
             .clip(RoundedCornerShape(20.dp))
             .clickable(
                 enabled = enabled,
@@ -840,7 +841,12 @@ private fun HomeEntryOptionPreviewCard(
                 onClickLabel = title,
                 onClick = onClick
             )
-            .background(if (enabled) tint.copy(alpha = 0.12f) else Color(0xFFE1DDE2))
+            .semantics(mergeDescendants = true) {
+                if (!enabled) {
+                    contentDescription = "$title. Blocked by a pair or the three-pawn limit."
+                }
+            }
+            .background(if (enabled) Color.White else Color(0xFFE1DDE2))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -848,17 +854,18 @@ private fun HomeEntryOptionPreviewCard(
         HomeEntryPathMiniPreview(
             tint = if (enabled) tint else Color.Gray,
             enterHomePath = enterHomePath,
+            identity = identity,
             modifier = Modifier
-                .width(76.dp)
-                .height(42.dp)
+                .width(100.dp)
+                .height(84.dp)
         )
 
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = if (enabled) tint.copy(alpha = 0.95f) else Color.DarkGray
+                color = Color(0xFF352440)
             )
             Text(
                 text = description,
@@ -873,59 +880,66 @@ private fun HomeEntryOptionPreviewCard(
 private fun HomeEntryPathMiniPreview(
     tint: Color,
     enterHomePath: Boolean,
+    identity: Int,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
-        val lineWidth = size.minDimension * 0.14f
-        val baseY = size.height * 0.72f
-        val start = Offset(size.width * 0.10f, baseY)
+        val left = size.width * .18f
+        val right = size.width * .84f
+        val top = size.height * .16f
+        val bottom = size.height * .78f
+        val middle = size.width * .51f
+        val finish = Offset(middle, size.height * .43f)
+        val start = Offset(left, bottom)
+        val turn = Offset(middle, bottom)
+        val trackWidth = size.minDimension * .13f
+        val ink = Color(0xFF55455D)
 
-        if (enterHomePath) {
-            val laneTurn = Offset(size.width * 0.58f, baseY)
-            val finish = Offset(laneTurn.x, size.height * 0.20f)
-
-            drawLine(
-                color = tint.copy(alpha = 0.85f),
-                start = start,
-                end = laneTurn,
-                strokeWidth = lineWidth,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = tint.copy(alpha = 0.85f),
-                start = laneTurn,
-                end = finish,
-                strokeWidth = lineWidth,
-                cap = StrokeCap.Round
-            )
-
-            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = start)
-            drawCircle(color = tint.copy(alpha = 0.98f), radius = lineWidth * 0.58f, center = finish)
-            drawCircle(color = Color.White.copy(alpha = 0.9f), radius = lineWidth * 0.22f, center = finish)
-        } else {
-            val end = Offset(size.width * 0.90f, baseY)
-
-            drawLine(
-                color = tint.copy(alpha = 0.85f),
-                start = start,
-                end = end,
-                strokeWidth = lineWidth,
-                cap = StrokeCap.Round
-            )
-
-            drawArc(
-                color = tint.copy(alpha = 0.72f),
-                startAngle = 210f,
-                sweepAngle = 290f,
-                useCenter = false,
-                topLeft = Offset(size.width * 0.52f, size.height * 0.18f),
-                size = Size(size.width * 0.34f, size.height * 0.50f),
-                style = Stroke(width = lineWidth * 0.7f, cap = StrokeCap.Round)
-            )
-
-            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = start)
-            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = end)
+        // Both choices share the same track and center so the fork is easy to compare.
+        val track = Path().apply {
+            moveTo(left, bottom)
+            lineTo(right, bottom)
+            lineTo(right, top)
+            lineTo(left, top)
+            close()
         }
+        drawPath(track, Color(0xFFE8E2EB), style = Stroke(trackWidth))
+        drawLine(tint.copy(alpha = .25f), turn, finish, trackWidth)
+        val centerDiamond = Path().apply {
+            val radius = size.minDimension * .12f
+            moveTo(finish.x, finish.y - radius)
+            lineTo(finish.x + radius, finish.y)
+            lineTo(finish.x, finish.y + radius)
+            lineTo(finish.x - radius, finish.y)
+            close()
+        }
+        drawPath(centerDiamond, tint)
+        drawPath(centerDiamond, ink, style = Stroke(1.dp.toPx()))
+
+        val route = if (enterHomePath) {
+            listOf(start, turn, Offset(middle, finish.y + trackWidth))
+        } else {
+            listOf(start, Offset(right, bottom), Offset(right, top), Offset(left + trackWidth, top))
+        }
+        route.zipWithNext().forEach { (from, to) ->
+            drawLine(ink, from, to, 3.dp.toPx(), StrokeCap.Round)
+        }
+        val end = route.last()
+        val previous = route[route.lastIndex - 1]
+        val direction = (end - previous) / (end - previous).getDistance()
+        val perpendicular = Offset(-direction.y, direction.x)
+        val arrowSize = 6.dp.toPx()
+        val arrow = Path().apply {
+            moveTo(end.x, end.y)
+            val wingA = end - direction * arrowSize + perpendicular * arrowSize * .65f
+            val wingB = end - direction * arrowSize - perpendicular * arrowSize * .65f
+            lineTo(wingA.x, wingA.y)
+            lineTo(wingB.x, wingB.y)
+            close()
+        }
+        drawPath(arrow, ink)
+        drawPawn(start, size.minDimension * .17f, tint,
+            selectable = false, lift = 0f, identity = identity)
     }
 }
 

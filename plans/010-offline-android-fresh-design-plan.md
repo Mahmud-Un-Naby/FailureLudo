@@ -485,3 +485,14 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
 - Validation: app unit tests and debug APK build pass. Regression assertions cover
   teammate single choices and same-color/mixed-color pair previews. Device visual
   and accessibility review remain with the user.
+
+## September 27 follow-up — simpler route prompt
+
+- Route choices now ask “Which way?” with “Enter finish / Toward the center” and
+  “Go around / One more lap”. Larger matching diagrams show the customized pawn,
+  center, shared track and directional arrows. Text keeps a fixed dark color for
+  readability with arbitrary pawn colors; the options scroll on short screens.
+- Illegal circulation stays disabled and grey with a short “Blocked” label and
+  the existing full reason available to screen readers. Move rules are unchanged.
+- Validation: Android compilation and debug APK build passed. Device visual and
+  accessibility review remain pending.
