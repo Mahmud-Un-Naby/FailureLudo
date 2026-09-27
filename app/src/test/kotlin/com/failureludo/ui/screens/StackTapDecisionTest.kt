@@ -22,6 +22,8 @@ class StackTapDecisionTest {
         val decision = resolveStackTapDecision(TappedCellPieces(pieces, pieces, single), GameMode.FREE_FOR_ALL)
         assertEquals(single, decision.options.first { it.label == "Move single" }.piece)
         assertTrue(decision.options.first { it.label == "Move pair" }.piece in pair)
+        assertEquals(listOf(PlayerColor.RED, PlayerColor.RED),
+            decision.options.first { it.label == "Move pair" }.previewColors)
     }
 
     @Test
@@ -87,8 +89,8 @@ class StackTapDecisionTest {
 
         assertNull(decision.autoPiece)
         assertEquals(2, decision.options.size)
-        assertTrue(decision.options.any { it.label == "Move Red" && it.piece == redPiece })
-        assertTrue(decision.options.any { it.label == "Move Yellow" && it.piece == yellowPiece })
+        assertTrue(decision.options.any { it.previewColors == listOf(PlayerColor.RED) && it.piece == redPiece })
+        assertTrue(decision.options.any { it.previewColors == listOf(PlayerColor.YELLOW) && it.piece == yellowPiece })
     }
 
     @Test
@@ -217,5 +219,9 @@ class StackTapDecisionTest {
         assertEquals(2, decision.options.size)
         assertTrue(decision.options.any { it.label == "Move pair" && (it.piece == redPairPiece || it.piece == yellowPairPiece) })
         assertTrue(decision.options.any { it.label == "Move single" && it.piece == redTopSingle })
+        assertEquals(listOf(PlayerColor.RED, PlayerColor.YELLOW),
+            decision.options.first { it.label == "Move pair" }.previewColors)
+        assertEquals(listOf(PlayerColor.RED),
+            decision.options.first { it.label == "Move single" }.previewColors)
     }
 }

@@ -474,39 +474,37 @@ fun GameBoardScreen(
             title = { Text("Choose your pawn", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Select which move to play from this stack.")
                     choiceState.options.forEach { option ->
+                        val owners = option.previewColors.joinToString(" and ") { color ->
+                            gameState.players.firstOrNull { it.color == color }?.name
+                                ?: "Player-${color.ordinal + 1}"
+                        }
                         Surface(
+                            onClick = {
+                                pendingStackChoice = null
+                                viewModel.selectPiece(option.piece)
+                            },
                             shape = RoundedCornerShape(12.dp),
-                            color = option.tint.copy(alpha = 0.15f),
+                            color = Color.White,
                             tonalElevation = 1.dp,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().semantics {
+                                contentDescription = "${option.label}: $owners"
+                            }
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.Center
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clip(CircleShape)
-                                            .background(option.tint)
-                                    )
-                                    Text(option.label, style = MaterialTheme.typography.bodyLarge)
-                                }
-                                TextButton(
-                                    onClick = {
-                                        pendingStackChoice = null
-                                        viewModel.selectPiece(option.piece)
+                                option.previewColors.forEach { color ->
+                                    val tint = playerColor(color, setup.playerColors)
+                                    Canvas(Modifier.size(48.dp)) {
+                                        drawPawn(center, size.minDimension * .40f, tint,
+                                            selectable = false, lift = 0f, identity = color.ordinal)
                                     }
-                                ) { Text("Play") }
+                                }
                             }
                         }
                     }
@@ -641,7 +639,7 @@ fun GameBoardScreen(
 internal data class StackMoveOption(
     val label: String,
     val piece: Piece,
-    val tint: Color
+    val previewColors: List<PlayerColor>
 )
 
 private data class StackMoveChoiceState(
@@ -724,29 +722,15 @@ internal fun resolveStackTapDecision(tapped: TappedCellPieces, mode: GameMode): 
         return StackTapDecision(autoPiece = chooseRepresentative(groupedChoices.values.first()))
     }
 
-    val singleOptionColors = groupedChoices.keys
-        .filter { it.type == StackMoveMeaningType.SINGLE }
-        .flatMap { it.colors }
-        .toSet()
-    val shouldUseColorLabelsForSingles = singleOptionColors.size > 1
-
     val options = groupedChoices.map { (meaning, candidates) ->
-        val representative = chooseRepresentative(candidates)
-        val label = when (meaning.type) {
-            StackMoveMeaningType.PAIR -> "Move pair"
-            StackMoveMeaningType.SINGLE -> {
-                if (shouldUseColorLabelsForSingles) {
-                    "Move ${representative.color.displayName}"
-                } else {
-                    "Move single"
-                }
-            }
-        }
-
         StackMoveOption(
-            label = label,
-            piece = representative,
-            tint = playerColor(representative.color)
+            label = if (meaning.type == StackMoveMeaningType.PAIR) "Move pair" else "Move single",
+            piece = chooseRepresentative(candidates),
+            previewColors = if (meaning.type == StackMoveMeaningType.PAIR) {
+                pairRefs.map { it.color }.sortedBy { it.ordinal }
+            } else {
+                listOf(candidates.first().color)
+            }
         )
     }
 

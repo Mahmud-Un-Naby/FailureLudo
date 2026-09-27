@@ -253,7 +253,7 @@ internal fun DrawScope.drawIdentity(center: Offset, r: Float, color: Color, inde
     }
 }
 
-private fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: Boolean, lift: Float, identity: Int) {
+internal fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: Boolean, lift: Float, identity: Int) {
     drawOval(Color.Black.copy(alpha = if (lift > 0) .13f else .22f),
         at + Offset(-r*.85f, r*.43f), Size(r*1.8f, r*.65f))
     val p = at - Offset(0f, lift)

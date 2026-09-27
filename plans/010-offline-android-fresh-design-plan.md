@@ -474,3 +474,14 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
   for this change. Added computer-preset tests and pre-game UI regression coverage
   for empty-history import access and delete cancellation/confirmation. Device
   execution and visual review remain with the user.
+
+
+## September 27 follow-up — visual stack move choices
+
+- Stack move options now show tappable pawn samples in the customized player colors,
+  using the board renderer and identity symbols instead of default color names/dots.
+- Single moves show one pawn; locked pairs show both pawns, including mixed team colors.
+  Spoken option descriptions use player names. Selection behavior is preserved.
+- Validation: app unit tests and debug APK build pass. Regression assertions cover
+  teammate single choices and same-color/mixed-color pair previews. Device visual
+  and accessibility review remain with the user.
