@@ -52,7 +52,7 @@ object SoundCatalog {
             SoundOption("wooden_piece_tap", "Wooden tap", R.raw.wooden_piece_tap, 0.50f, 0.98f, 1.02f)
         )),
         SoundCategory(FeedbackEvent.CAPTURE, "original_capture", listOf(
-            SoundOption("original_capture", "Tut tut faah", R.raw.sfx_capture, 1.20f),
+            SoundOption("original_capture", "faaah", R.raw.sfx_capture, 1.20f),
             SoundOption("wooden_capture_knock", "Wooden double knock", R.raw.wooden_capture_knock, 0.85f)
         )),
         SoundCategory(FeedbackEvent.PIECE_FINISH, "tabletop_piece_finish", listOf(

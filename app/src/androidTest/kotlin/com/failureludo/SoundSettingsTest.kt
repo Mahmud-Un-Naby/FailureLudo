@@ -24,7 +24,7 @@ class SoundSettingsTest {
             }
         }
         compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Preview Capture: Tut tut faah")
+        compose.onNodeWithContentDescription("Preview Capture: faaah")
             .performScrollTo().performClick()
         compose.runOnIdle { assertEquals(FeedbackEvent.CAPTURE to "original_capture", preview) }
         compose.onNodeWithText("Reset sound choices").performScrollTo().performClick()
