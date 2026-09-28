@@ -51,7 +51,7 @@ fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Uni
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TabletopStyle.Paper)) {
-                        Text("Play online · Preview")
+                        Text("Play online")
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

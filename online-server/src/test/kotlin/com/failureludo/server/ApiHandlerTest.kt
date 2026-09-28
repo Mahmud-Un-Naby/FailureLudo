@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.sun.net.httpserver.HttpServer
 import org.json.JSONObject
 import org.junit.After
@@ -59,6 +61,19 @@ class ApiHandlerTest {
         assertEquals(200, request(path, move.toString()).statusCode())
         assertEquals(4L, JSONObject(request("/v1/rooms/ABCDEFGH", token = "guest").body()).getJSONObject("room").getLong("revision"))
     }
+    @Test fun `HTTP leave returns a private acknowledgement and revokes room reads`() {
+        assertEquals(200, request("/v1/rooms", createBody().toString()).statusCode())
+        val path = "/v1/rooms/ABCDEFGH/commands"
+        val body = command("LEAVE", 0).toString()
+        val response = request(path, body)
+        assertEquals(200, response.statusCode())
+        val room = JSONObject(response.body()).getJSONObject("room")
+        assertEquals("CLOSED", room.getString("status"))
+        assertEquals(0, room.getJSONArray("members").length())
+        assertEquals(403, request("/v1/rooms/ABCDEFGH").statusCode())
+        assertTrue(JSONObject(request(path, body).body()).getBoolean("duplicate"))
+    }
+
     @Test fun `caller cannot inject UID dice or replacement state`() {
         for (field in listOf("uid", "diceValue", "gameState")) {
             val response = request("/v1/rooms", createBody().put(field, "forged").toString())

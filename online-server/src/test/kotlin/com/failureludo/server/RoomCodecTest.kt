@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.failureludo.engine.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -26,14 +28,14 @@ class RoomCodecTest {
                 GameEvent.ExtraRollGranted(id, PlayerColor.RED, "Capture"),
                 GameEvent.TurnSkipped(id, PlayerColor.RED), GameEvent.ConsecutiveSixesForfeit(id, PlayerColor.RED)))
         val room = OnlineRoom("ABCDEFGH", "host", 4, GameMode.TEAM,
-            listOf(Member("host", "Host", PlayerColor.RED)), 42, RoomStatus.PLAYING, state, LastAction("ROLL", "host", 6))
+            listOf(Member("host", "Host", PlayerColor.RED)), 42, RoomStatus.PLAYING, state, LastAction("ROLL", "host", 6, 2))
         assertEquals(room, RoomCodec.decode(RoomCodec.encode(room)))
     }
     @Test fun `unsupported protocol and rules fail closed`() {
         val room = OnlineRoom("ABCDEFGH", "host", 2, GameMode.FREE_FOR_ALL, listOf(Member("host", "Host", PlayerColor.RED)))
         for ((key, value) in listOf("protocolVersion" to 999, "rulesVersion" to "unknown")) {
-            val error = assertThrows(ApiException::class.java) { RoomCodec.decode(RoomCodec.encode(room).put(key, value)) }
-            assertEquals("UNSUPPORTED_VERSION", error.code)
+            val error = assertThrows(UnsupportedRoomVersion::class.java) { RoomCodec.decode(RoomCodec.encode(room).put(key, value)) }
+            assertTrue(error.message!!.contains("compatible"))
         }
     }
 }

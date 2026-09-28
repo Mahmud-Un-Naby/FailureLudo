@@ -3,257 +3,63 @@ package com.failureludo.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.failureludo.data.auth.AuthRepository
-import com.failureludo.data.online.OnlineGameRepository
-import com.failureludo.data.online.OnlineMove
-import com.failureludo.data.online.RoomPlayer
-import com.failureludo.engine.DeterministicTurnInput
-import com.failureludo.engine.GameRules
-import com.failureludo.engine.Piece
-import com.failureludo.engine.GameEngine
-import com.failureludo.engine.GameMode
-import com.failureludo.engine.GameState
-import com.failureludo.engine.PlayerColor
-import com.failureludo.engine.PlayerId
-import com.failureludo.engine.PlayerType
-import com.failureludo.engine.TurnPhase
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import com.failureludo.data.FeedbackSettings
+import com.failureludo.data.GameSessionStore
 import kotlinx.coroutines.launch
+import com.failureludo.data.GamePreferencesStore
+import com.failureludo.data.online.OnlineGameRepository
+import com.failureludo.engine.*
+import kotlinx.coroutines.flow.*
+import org.json.JSONObject
 
-data class OnlineGameUiState(
-    val gameState: GameState? = null,
-    val myColor: PlayerColor? = null,
-    val roomPlayers: List<RoomPlayer> = emptyList(),
-    val isSubmitting: Boolean = false,
-    val pendingHomeEntryPiece: Piece? = null
-) {
-    val isMyTurn: Boolean
-        get() = gameState != null && gameState.currentPlayer.color == myColor && !gameState.isGameOver
-    val canRoll: Boolean
-        get() = isMyTurn && gameState?.turnPhase == TurnPhase.WAITING_FOR_ROLL && !isSubmitting
-    val canSelectPiece: Boolean
-        get() = isMyTurn && gameState?.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION && !isSubmitting
-}
-
+/** Online state is owned by the server. This ViewModel only submits intentions. */
 class OnlineGameViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val authRepo = AuthRepository(application)
-    private val onlineRepo = OnlineGameRepository()
-
-    private val _uiState = MutableStateFlow(OnlineGameUiState())
-    val uiState: StateFlow<OnlineGameUiState> = _uiState.asStateFlow()
-
-    private val _errors = MutableSharedFlow<String>()
-    val errors: SharedFlow<String> = _errors.asSharedFlow()
-
-    private var roomId: String? = null
-    private var localGameState: GameState? = null
-    private var appliedMoveCount = 0
-    private var noMovesJob: Job? = null
-
-    fun initGame(newRoomId: String) {
-        if (roomId == newRoomId) return
-        roomId = newRoomId
-
+    private val repository = OnlineGameRepository.get(application)
+    val state = repository.state
+    val feedbackSettings = GamePreferencesStore(application).feedbackSettings.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), FeedbackSettings())
+    private val choice = MutableStateFlow<Pair<Long, Piece>?>(null)
+    val homeEntryChoice = choice.asStateFlow()
+    private val colors = MutableStateFlow(defaultPlayerColors())
+    val palette = colors.asStateFlow()
+    init {
+        repository.attach()
         viewModelScope.launch {
-            val room = onlineRepo.fetchRoom(newRoomId).getOrElse {
-                _errors.emit("Could not load game. Check your connection.")
-                return@launch
-            }
-
-            val myUid = authRepo.currentProfile?.uid
-            val myRoomPlayer = room.players.find { it.uid == myUid }
-            val myColor = myRoomPlayer?.color
-                ?.let { runCatching { PlayerColor.valueOf(it) }.getOrNull() }
-
-            // Build initial game state — same on all clients
-            val activeColors = room.players
-                .mapNotNull { runCatching { PlayerColor.valueOf(it.color) }.getOrNull() }
-                .sortedBy { it.ordinal }
-
-            val playerNames = room.players
-                .mapNotNull { p ->
-                    val color = runCatching { PlayerColor.valueOf(p.color) }.getOrNull() ?: return@mapNotNull null
-                    color to p.name
-                }
-                .toMap()
-
-            val initialState = GameEngine.newGame(
-                activeColors = activeColors,
-                playerTypes  = activeColors.associateWith { PlayerType.HUMAN },
-                playerNames  = playerNames,
-                mode         = GameMode.FREE_FOR_ALL
-            )
-
-            localGameState = initialState
-            _uiState.value = OnlineGameUiState(
-                gameState   = initialState,
-                myColor     = myColor,
-                roomPlayers = room.players
-            )
-
-            // Listen to moves from Firestore and apply opponent moves
-            launch {
-                onlineRepo.listenToMoves(newRoomId).collect { moves ->
-                    applyIncomingMoves(moves)
-                }
-            }
+            runCatching { GameSessionStore(application).loadSetupState() }.getOrNull()?.let { colors.value = it.playerColors }
         }
     }
-
-    // ── Local player actions ──────────────────────────────────────────────────
-
+    fun retry() = repository.retry()
     fun rollDice() {
-        val state = localGameState ?: return
-        val myColor = _uiState.value.myColor ?: return
-        if (!_uiState.value.canRoll) return
-
-        val diceValue = (1..6).random()
-        val rolledState = GameEngine.rollDice(state, diceValue)
-        localGameState = rolledState
-        _uiState.update { it.copy(gameState = rolledState, isSubmitting = true) }
-
-        when (rolledState.turnPhase) {
-            TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
-                // Let user tap a piece
-                _uiState.update { it.copy(isSubmitting = false) }
-            }
-            TurnPhase.NO_MOVES_AVAILABLE -> {
-                noMovesJob = viewModelScope.launch {
-                    delay(1_200L)
-                    val finalState = GameEngine.advanceNoMoves(rolledState)
-                    submitAndApplyLocally(
-                        move = buildMove(state, diceValue, pieceId = -1),
-                        finalState = finalState
-                    )
-                }
-            }
-            TurnPhase.WAITING_FOR_ROLL -> {
-                // Consecutive-sixes forfeit — engine already advanced the turn
-                submitAndApplyLocally(
-                    move = buildMove(state, diceValue, pieceId = -1),
-                    finalState = rolledState
-                )
-            }
-            else -> {}
-        }
+        val session = state.value
+        val game = session.room?.game ?: return
+        if (canAct() && game.turnPhase == TurnPhase.WAITING_FOR_ROLL) repository.command("ROLL")
     }
-
     fun selectPiece(piece: Piece) {
-        val state = localGameState ?: return
-        if (!_uiState.value.canSelectPiece || piece !in state.movablePieces) return
-        val dice = state.lastDice?.value ?: return
-        if (GameRules.wouldEnterHomePath(piece, dice, piece.color, state.players, state.mode)) {
-            _uiState.update { it.copy(pendingHomeEntryPiece = piece) }
-        } else applyPieceSelection(piece, false)
+        val room = state.value.room ?: return
+        val game = room.game ?: return
+        if (!canAct() || game.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION || piece !in game.movablePieces) return
+        if (GameRules.wouldEnterHomePath(piece, game.lastDice!!.value, piece.color, game.players, game.mode)) {
+            choice.value = room.revision to piece
+        } else submit(piece, false)
     }
-
-    fun dismissHomeEntryChoice() {
-        _uiState.update { it.copy(pendingHomeEntryPiece = null) }
+    fun dismissHomeEntryChoice() { choice.value = null }
+    fun resolveHomeEntryChoice(enter: Boolean) {
+        val pending = choice.value ?: return
+        choice.value = null
+        if (state.value.room?.revision == pending.first) submit(pending.second, !enter)
     }
-
-    fun resolveHomeEntryChoice(enterHomePath: Boolean) {
-        val piece = _uiState.value.pendingHomeEntryPiece ?: return
-        applyPieceSelection(piece, !enterHomePath)
+    private fun submit(piece: Piece, defer: Boolean) {
+        val game = state.value.room?.game ?: return
+        if (!canAct() || piece !in game.movablePieces) return
+        val owner = game.players.single { it.color == piece.color }
+        repository.command("MOVE", JSONObject().put("playerId", owner.id.value).put("pieceId", piece.id)
+            .put("deferHomeEntry", defer))
     }
-
-    private fun applyPieceSelection(piece: Piece, deferHomeEntry: Boolean) {
-        val state = localGameState ?: return
-        if (!_uiState.value.canSelectPiece || piece !in state.movablePieces) return
-        val diceValue = state.lastDice?.value ?: return
-        val owner = state.players.first { it.color == piece.color }
-        if (!GameRules.canMove(piece, diceValue, owner, state.players, state.mode, deferHomeEntry)) return
-        val finalState = GameEngine.selectPiece(state, piece, deferHomeEntry)
-        dismissHomeEntryChoice()
-        submitAndApplyLocally(
-            move = buildMove(state, diceValue, piece.id).copy(
-                movingPlayerId = owner.id.value, deferHomeEntry = deferHomeEntry
-            ),
-            finalState = finalState
-        )
+    private fun canAct(): Boolean {
+        val session = state.value
+        val room = session.room ?: return false
+        return session.canAct && room.members.find { it.uid == session.uid }?.color == room.game?.currentPlayer?.color &&
+            room.game?.isGameOver == false
     }
-
-    // ── Internal ──────────────────────────────────────────────────────────────
-
-    /**
-     * Applies the move locally (optimistically) and writes it to Firestore.
-     * Increments [appliedMoveCount] BEFORE the write so the Firestore echo is skipped.
-     */
-    private fun submitAndApplyLocally(move: OnlineMove, finalState: GameState) {
-        noMovesJob?.cancel()
-        appliedMoveCount++
-        localGameState = finalState
-        _uiState.update { it.copy(gameState = finalState, isSubmitting = false) }
-
-        val currentRoomId = roomId ?: return
-        viewModelScope.launch {
-            onlineRepo.writeMove(currentRoomId, move).onFailure {
-                _errors.emit("Move could not be submitted. Check your connection.")
-            }
-        }
-    }
-
-    /**
-     * Applies moves received from Firestore that have not yet been applied locally.
-     * Moves already applied locally (index < appliedMoveCount) are skipped.
-     */
-    private fun applyIncomingMoves(moves: List<OnlineMove>) {
-        val newMoves = moves
-            .filter { it.index >= appliedMoveCount }
-            .sortedBy { it.index }
-
-        if (newMoves.isEmpty()) return
-
-        var state = localGameState ?: return
-
-        for (move in newMoves) {
-            state = try {
-                applyMoveToState(state, move)
-            } catch (e: Exception) {
-                viewModelScope.launch { _errors.emit("Game sync error: ${e.message}") }
-                return
-            }
-            appliedMoveCount++
-        }
-
-        localGameState = state
-        _uiState.update { it.copy(gameState = state, pendingHomeEntryPiece = null) }
-    }
-
-    private fun applyMoveToState(state: GameState, move: OnlineMove): GameState {
-        val actorId = PlayerId(move.actorId)
-        return if (move.pieceId == -1) {
-            GameEngine.applyDeterministicRollOnly(state, actorId, move.diceValue)
-        } else {
-            val input = DeterministicTurnInput(
-                actorId        = actorId,
-                movingPlayerId = PlayerId(move.movingPlayerId),
-                pieceId        = move.pieceId,
-                diceValue      = move.diceValue,
-                deferHomeEntry = move.deferHomeEntry
-            )
-            GameEngine.applyDeterministicTurn(state, input)
-        }
-    }
-
-    private fun buildMove(state: GameState, diceValue: Int, pieceId: Int) = OnlineMove(
-        index          = appliedMoveCount,
-        actorId        = state.currentPlayer.id.value,
-        movingPlayerId = state.currentPlayer.id.value,
-        diceValue      = diceValue,
-        pieceId        = pieceId
-    )
-
-    override fun onCleared() {
-        super.onCleared()
-        noMovesJob?.cancel()
-    }
+    override fun onCleared() { repository.detach() }
 }

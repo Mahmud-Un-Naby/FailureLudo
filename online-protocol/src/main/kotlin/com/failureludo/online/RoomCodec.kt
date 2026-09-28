@@ -1,4 +1,4 @@
-package com.failureludo.server
+package com.failureludo.online
 
 import com.failureludo.engine.*
 import org.json.JSONArray
@@ -14,11 +14,11 @@ object RoomCodec {
             .put("uid", it.uid).put("name", it.name).put("color", it.color.name) }))
         .put("game", room.game?.let(::gameStateToJson) ?: JSONObject.NULL)
         .put("lastAction", room.lastAction?.let { JSONObject().put("type", it.type)
-            .put("uid", it.uid).put("dice", it.dice ?: JSONObject.NULL) } ?: JSONObject.NULL)
+            .put("uid", it.uid).put("dice", it.dice ?: JSONObject.NULL).put("eventCount", it.eventCount) } ?: JSONObject.NULL)
 
     fun decode(json: JSONObject): OnlineRoom {
         if (json.getInt("protocolVersion") != PROTOCOL_VERSION || json.getString("rulesVersion") != RULES_VERSION) {
-            reject(409, "UNSUPPORTED_VERSION", "This room needs a compatible server version.")
+            throw UnsupportedRoomVersion()
         }
         return OnlineRoom(
             code = json.getString("code"), hostUid = json.getString("hostUid"),
@@ -28,7 +28,8 @@ object RoomCodec {
             }, revision = json.getLong("revision"), status = RoomStatus.valueOf(json.getString("status")),
             game = if (json.isNull("game")) null else gameStateFromJson(json.getJSONObject("game")),
             lastAction = if (json.isNull("lastAction")) null else json.getJSONObject("lastAction").let {
-                LastAction(it.getString("type"), it.getString("uid"), if (it.isNull("dice")) null else it.getInt("dice"))
+                LastAction(it.getString("type"), it.getString("uid"), if (it.isNull("dice")) null else it.getInt("dice"),
+                    it.optInt("eventCount", 0).also { count -> require(count in 0..32) })
             }
         )
     }

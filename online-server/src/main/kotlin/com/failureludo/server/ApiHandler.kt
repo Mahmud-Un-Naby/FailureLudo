@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.failureludo.engine.GameMode
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
@@ -51,6 +53,7 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
                             Command.Join(body.getString("name"))
                         }
                         "START" -> { body.only(*common); Command.Start }
+                        "LEAVE" -> { body.only(*common); Command.Leave }
                         "ROLL" -> { body.only(*common); Command.Roll }
                         "MOVE" -> {
                             body.only(*common, "playerId", "pieceId", "deferHomeEntry")
@@ -68,6 +71,8 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
             respond(exchange, 200, response)
         } catch (error: ApiException) {
             respond(exchange, error.status, JSONObject().put("error", error.code).put("message", error.message))
+        } catch (error: UnsupportedRoomVersion) {
+            respond(exchange, 409, JSONObject().put("error", "UNSUPPORTED_VERSION").put("message", error.message))
         } catch (error: JSONException) {
             respond(exchange, 400, JSONObject().put("error", "INVALID_BODY").put("message", "Invalid JSON request."))
         } catch (error: Exception) {

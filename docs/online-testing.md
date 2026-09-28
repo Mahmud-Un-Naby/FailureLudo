@@ -8,34 +8,38 @@ mandatory separate product-flavor, and disabled-online-release requirements reco
 below. Continue on `feat/online-testing`; production publication and backend deployment
 still require explicit authorization. Web/parity work remains paused.
 
-Offline startup and play must continue to work without internet, sign-in, or a backend.
-Online guests must be able to create/join rooms without a Google account. The retained
-implementation supports anonymous Firebase authentication through **Play as Guest**;
-automatic guest entry without an authentication screen has not been implemented.
+Offline startup and play remain independent of internet, sign-in and backend availability.
+Online entry is included in debug and release navigation and automatically creates/reuses
+an anonymous Firebase identity. There is no mandatory sign-in screen or Google account.
 
-Current compatibility assessment from source inspection:
-- Android and engine source match the merged offline baseline on `main`.
-- Online uses the shared current rules engine and deterministic move application,
-  including stacked-pawn selection and the home-entry choice.
-- Online still renders `LudoBoardCanvas` with its older player rails and dice, while
-  offline uses `TabletopGameLayout` and `TabletopBoard`. Offline movement animation,
-  feedback/settings integration, saves, and history/replay are not wired into online.
-- Online currently creates human-only free-for-all games; offline team/bot setup is
-  not exposed online. Offline undo/redo is not an online multiplayer contract.
-- Navigation is still debug-only. Release inclusion requires implementation, not just
-  this scope change. Shared rules do not establish reliable network play.
+## Android migration handoff — 28 September 2026
 
-The user selected a server-controlled Kotlin engine on Cloud Run, with Firebase guest
-identity and Firestore persistence. Follow [plan 011](../plans/011-authoritative-online-release-plan.md)
-for implementation and validation. Its backend foundation precedes Android migration,
-tabletop integration and release entry. The old client-written relay is being replaced,
-not promoted to release unchanged. See [server setup](../online-server/README.md).
-Keep test and production backend configuration deliberate. Validate release builds,
-offline startup without a connection, guest room entry, and complete two-device games
-before declaring release readiness. Backend unit tests, distribution build, Java 17
-startup smoke checks and Android compilation now pass; emulator/container checks remain
-blocked by runtime download failures. See plan 011 for exact validation and remaining work.
-No device verification or deployment has been performed.
+The app now sends create/join/start/leave/roll/move commands to the server-controlled
+Kotlin backend. `online-protocol` shares the room model and snapshot codec with Android;
+Android no longer writes move logs or chooses online dice. Confirmed snapshots drive
+the shared tabletop board, corner dice, movement/capture animation and feedback settings.
+Both free-for-all and four-player team rooms are supported. Offline saves, bots,
+undo/redo and history remain local; online history and resignation are still outstanding.
+
+Pending commands and the active room are saved atomically in app-private no-backup
+storage, bound to Firebase UID and service origin. Retrying preserves the request ID,
+including after process death. Older HTTP responses cannot replace newer confirmed
+snapshots. Token refresh, stale revisions, live-listener reconnection and waiting-room
+host transfer are handled explicitly. Returning from an active game keeps the seat for
+resume; it does not resign or resolve a disconnected player's turn.
+
+Build with `-PonlineApiUrl=https://YOUR-SERVICE.run.app` after an authorized backend
+configuration/deployment. The URL must be an HTTPS origin. The current APKs were built
+without a service URL: online entry explains that online play is unavailable, and offline
+play remains accessible. These APKs do not yet provide live online gameplay.
+
+Follow [plan 011](../plans/011-authoritative-online-release-plan.md) and the
+[server setup guide](../online-server/README.md) for configuration and remaining work.
+The checked-in Firestore rules now deny legacy `rooms`/`moves` client access; deploy them
+as a coordinated migration with the new backend/app. Legacy data remains intact.
+Nothing has been deployed. Real Firebase authentication, emulator rules/transactions,
+container packaging, two-device play and device visual/audio review remain unverified.
+See plan 011 for exact build/test results and the runtime download blockers.
 
 ## Historical branch handoff — 28 September 2026
 

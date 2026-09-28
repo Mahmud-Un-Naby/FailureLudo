@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.failureludo.engine.*
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -24,7 +26,7 @@ class GameController(
                 return store.execute(key, fingerprint, code) { existing ->
                     if (existing != null) reject(409, "CODE_COLLISION", "Try creating the room again.")
                     OnlineRoom(code, uid, maxPlayers, mode, listOf(Member(uid, displayName, PlayerColor.RED)))
-                }
+                }.also { requireMember(it.room, uid) }
             } catch (error: ApiException) {
                 if (error.code != "CODE_COLLISION") throw error
             }
@@ -57,6 +59,14 @@ class GameController(
                 reject(409, "STALE_REVISION", "Reload the room before sending another action.")
             }
             when (normalized) {
+                Command.Leave -> {
+                    if (room.status != RoomStatus.WAITING) reject(409, "ALREADY_STARTED", "The game has started. Rejoin it to continue.")
+                    val remaining = room.members.filterNot { it.uid == uid }
+                    room.copy(revision = room.revision + 1, members = remaining,
+                        hostUid = if (room.hostUid == uid) remaining.firstOrNull()?.uid ?: uid else room.hostUid,
+                        status = if (remaining.isEmpty()) RoomStatus.CLOSED else RoomStatus.WAITING,
+                        lastAction = LastAction("LEAVE", uid))
+                }
                 Command.Start -> {
                     if (room.hostUid != uid) reject(403, "HOST_REQUIRED", "Only the host can start.")
                     if (room.status != RoomStatus.WAITING) reject(409, "ALREADY_STARTED", "Game already started.")
@@ -109,10 +119,18 @@ class GameController(
                         status = if (next.isGameOver) RoomStatus.FINISHED else RoomStatus.PLAYING,
                         game = next.copy(eventLog = next.eventLog.takeLast(32)),
                         lastAction = LastAction(if (normalized == Command.Roll) "ROLL" else "MOVE", uid,
-                            if (normalized == Command.Roll) dice else null))
+                            if (normalized == Command.Roll) dice else null,
+                            (next.eventLog.size - game.eventLog.size).coerceIn(0, 32)))
                 }
                 is Command.Join -> error("Join already handled")
             }
+        }.let { result ->
+            if (normalized == Command.Leave) {
+                // Receipts outlive membership. A former member must not use an old
+                // receipt to read the room's subsequent game or newly joined users.
+                result.copy(room = result.room.copy(revision = result.acceptedRevision, hostUid = uid, members = emptyList(), game = null,
+                    status = RoomStatus.CLOSED, lastAction = LastAction("LEAVE", uid)))
+            } else result.also { requireMember(it.room, uid) }
         }
     }
 

@@ -25,3 +25,4 @@ rootProject.name = "FailureLudo"
 if (!providers.gradleProperty("serverOnly").map(String::toBoolean).getOrElse(false)) include(":app")
 include(":game-engine")
 include(":online-server")
+include(":online-protocol")

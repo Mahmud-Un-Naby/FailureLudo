@@ -1,269 +1,249 @@
 package com.failureludo.data.online
 
-import com.failureludo.data.auth.UserProfile
-import com.failureludo.engine.PlayerColor
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestoreException
-import com.google.firebase.firestore.ListenerRegistration
+import android.content.Context
+import android.util.AtomicFile
+import com.failureludo.BuildConfig
+import com.failureludo.engine.GameMode
+import com.failureludo.online.*
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import org.json.JSONObject
+import java.io.File
+import java.io.FileNotFoundException
+import java.util.Locale
 
-class OnlineGameRepository {
+// Confirmed snapshots only. connected=false prevents acting on cached/offline data.
+data class OnlineSessionState(
+    val room: OnlineRoom? = null, val uid: String? = null, val busy: Boolean = false,
+    val pending: Boolean = false, val connected: Boolean = false, val error: String? = null,
+    val configured: Boolean = BuildConfig.ONLINE_API_URL.isNotBlank()
+) {
+    val canAct: Boolean get() = configured && connected && !busy && !pending && error == null
+}
 
-    private val firestore = Firebase.firestore
-    private val rooms = firestore.collection("rooms")
+class OnlineGameRepository private constructor(context: Context) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val mutex = Mutex()
+    private val api = OnlineApi(BuildConfig.ONLINE_API_URL)
+    private val file = AtomicFile(File(context.noBackupFilesDir, "online-session-v1.json"))
+    private var journal: OnlineCommandJournal? = null
+    private val mutable = MutableStateFlow(OnlineSessionState())
+    val state: StateFlow<OnlineSessionState> = mutable.asStateFlow()
+    private var watcher: Job? = null
+    private var watchedCode: String? = null
+    private var clients = 0
 
-    // ── Room creation ─────────────────────────────────────────────────────────
+    fun attach() { clients++; if (clients == 1) retry() }
+    fun detach() {
+        clients = (clients - 1).coerceAtLeast(0)
+        if (clients == 0) { watcher?.cancel(); watcher = null; watchedCode = null; mutable.update { it.copy(connected = false) } }
+    }
 
-    suspend fun createRoom(host: UserProfile, maxPlayers: Int): Result<GameRoom> {
-        return try {
-            val code = generateUniqueCode()
-            val hostPlayerData = playerMap(host, color = "", isHost = true)
-            val roomData = hashMapOf(
-                "roomCode"   to code,
-                "status"     to RoomStatus.WAITING.name,
-                "maxPlayers" to maxPlayers,
-                "hostUid"    to host.uid,
-                "players"    to listOf(hostPlayerData),
-                "moves"      to emptyList<Any>(),
-                "createdAt"  to FieldValue.serverTimestamp()
-            )
-            val ref = rooms.add(roomData).await()
-            Result.success(
-                GameRoom(
-                    id = ref.id,
-                    roomCode = code,
-                    status = RoomStatus.WAITING,
-                    maxPlayers = maxPlayers,
-                    players = listOf(RoomPlayer(host.uid, host.name, "android", "", true)),
-                    hostUid = host.uid
-                )
-            )
-        } catch (e: Exception) {
-            Result.failure(e)
+    fun retry() = launchOperation {
+        if (journal!!.state!!.pending != null) sendPending()
+        journal!!.state!!.room?.let { refresh(it.code) }
+    }
+
+    fun create(maxPlayers: Int, mode: GameMode) = launchOperation {
+        check(journal!!.state!!.room == null) { "Resume or leave your current room first." }
+        val uid = requireNotNull(mutable.value.uid)
+        send("/v1/rooms", JSONObject().put("name", "Guest#${uid.takeLast(4).uppercase(Locale.ROOT)}")
+            .put("maxPlayers", maxPlayers).put("mode", mode.name))
+    }
+
+    fun join(rawCode: String) = launchOperation {
+        check(journal!!.state!!.room == null) { "Resume or leave your current room first." }
+        val code = rawCode.trim().uppercase(Locale.ROOT)
+        require(code.matches(Regex("[A-HJ-NP-Z2-9]{8}"))) { "Enter the eight-character room code." }
+        val uid = requireNotNull(mutable.value.uid)
+        send("/v1/rooms/$code/commands", JSONObject().put("type", "JOIN")
+            .put("name", "Guest#${uid.takeLast(4).uppercase(Locale.ROOT)}"))
+    }
+
+    fun command(type: String, fields: JSONObject = JSONObject()) {
+        val clicked = state.value
+        val room = clicked.room ?: return
+        if (!clicked.canAct) return
+        // Freeze the revision that the player actually saw. A listener may advance
+        // the journal while identity/disk work suspends; never retarget that tap.
+        val body = JSONObject(fields.toString()).put("type", type).put("expectedRevision", room.revision)
+        launchOperation {
+            check(journal!!.state!!.room?.code == room.code) { "Your room changed. Open it again." }
+            send("/v1/rooms/${room.code}/commands", body)
         }
     }
 
-    // ── Room joining ──────────────────────────────────────────────────────────
+    fun forgetFinished() = launchOperation {
+        check(journal!!.state!!.room?.status in listOf(RoomStatus.FINISHED, RoomStatus.CLOSED))
+        journal!!.forgetFinished()
+        watcher?.cancel(); watcher = null; watchedCode = null
+    }
 
-    suspend fun joinRoom(code: String, player: UserProfile): Result<GameRoom> {
-        return try {
-            // Query by code, filter status client-side to avoid a composite index requirement
-            val snapshot = rooms
-                .whereEqualTo("roomCode", code.uppercase().trim())
-                .limit(5)
-                .get()
-                .await()
-
-            val doc = snapshot.documents.find { it.getString("status") == RoomStatus.WAITING.name }
-                ?: return Result.failure(Exception("Room not found or already started."))
-
-            val roomId = doc.id
-            val maxPlayers = (doc.getLong("maxPlayers") ?: 4).toInt()
-
-            // Atomic join via transaction
-            firestore.runTransaction { tx ->
-                val roomRef = rooms.document(roomId)
-                val fresh = tx.get(roomRef)
-                val currentPlayers = fresh.get("players") as? List<*> ?: emptyList<Any>()
-                if (currentPlayers.size >= maxPlayers) throw Exception("Room is full.")
-                val alreadyJoined = currentPlayers.any { (it as? Map<*, *>)?.get("uid") == player.uid }
-                if (!alreadyJoined) {
-                    tx.update(roomRef, "players", FieldValue.arrayUnion(playerMap(player, "", false)))
+    private fun launchOperation(block: suspend () -> Unit) {
+        if (mutable.value.busy) return
+        mutable.update { it.copy(busy = true, error = null) }
+        scope.launch {
+            mutex.withLock {
+                try {
+                    check(mutable.value.configured) { "Online play is not available in this build yet. Offline games are ready to play." }
+                    ensureIdentity()
+                    block()
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    mutable.update { it.copy(error = error.message ?: "Could not connect. Please retry.", connected = false) }
+                } finally {
+                    publish()
+                    mutable.update { it.copy(busy = false) }
+                    ensureWatcher()
                 }
-            }.await()
-
-            // Fetch updated room to return
-            val updatedDoc = rooms.document(roomId).get().await()
-            Result.success(docToRoom(roomId, updatedDoc.data ?: emptyMap()))
-        } catch (e: Exception) {
-            Result.failure(e)
+            }
         }
     }
 
-    // ── Real-time listener ────────────────────────────────────────────────────
-
-    fun listenToRoom(roomId: String): Flow<GameRoom?> = callbackFlow {
-        val ref = rooms.document(roomId)
-        val registration: ListenerRegistration = ref.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                trySend(null)
-                return@addSnapshotListener
-            }
-            val data = snapshot?.data
-            trySend(if (data != null) docToRoom(roomId, data) else null)
+    private suspend fun ensureIdentity() {
+        // Firebase is first accessed from an online destination, never offline startup.
+        val auth = Firebase.auth
+        val user = auth.currentUser ?: auth.signInAnonymously().await().user
+            ?: error("Could not start a guest session. Please retry.")
+        if (journal == null) journal = withContext(Dispatchers.IO) {
+            OnlineCommandJournal(object : JournalStorage {
+                override fun read(): String? = try { file.openRead().bufferedReader().use { it.readText() } }
+                    catch (_: FileNotFoundException) { null }
+                override fun write(value: String) {
+                    val output = file.startWrite()
+                    try {
+                        output.write(value.toByteArray(Charsets.UTF_8))
+                        output.fd.sync()
+                        file.finishWrite(output)
+                        check(file.openRead().bufferedReader().use { it.readText() } == value) {
+                            "Could not save the online action. Free some storage and retry."
+                        }
+                    }
+                    catch (error: Exception) { file.failWrite(output); throw error }
+                }
+            })
         }
+        withContext(Dispatchers.IO) { journal!!.bind(user.uid, BuildConfig.ONLINE_API_URL) }
+        mutable.update { it.copy(uid = user.uid) }
+        publish()
+    }
+
+    private suspend fun request(path: String, body: String? = null): JSONObject {
+        val user = Firebase.auth.currentUser ?: error("Your guest session is unavailable. Please retry.")
+        check(user.uid == journal!!.state!!.uid) { "Your identity changed. Restore the original session." }
+        suspend fun token(force: Boolean) = user.getIdToken(force).await().token ?: error("Could not refresh your session.")
+        return try { api.request(path, token(false), body) }
+        catch (error: OnlineApiException) {
+            if (error.status != 401) throw error
+            api.request(path, token(true), body)
+        }
+    }
+
+    private suspend fun send(path: String, body: JSONObject) {
+        withContext(Dispatchers.IO) { journal!!.begin(path, body) }
+        publish()
+        sendPending()
+    }
+
+    private suspend fun sendPending() {
+        try {
+            withContext(Dispatchers.IO) {
+                deliverPending(journal!!) { pending -> request(pending.path, pending.body) }
+            }
+            mutable.update { it.copy(connected = true, error = null) }
+        } catch (error: OnlineApiException) {
+            if (error.code == "STALE_REVISION" || error.code == "ALREADY_STARTED") {
+                journal!!.state!!.room?.let { refresh(it.code) }
+            }
+            throw error
+        }
+        publish()
+    }
+
+    private suspend fun refresh(code: String) {
+        try {
+            val room = RoomCodec.decode(request("/v1/rooms/$code").getJSONObject("room"))
+            withContext(Dispatchers.IO) { journal!!.accept(room) }
+            mutable.update { it.copy(connected = true, error = null) }
+            publish()
+        } catch (error: OnlineApiException) {
+            if (error.code in listOf("NOT_A_MEMBER", "ROOM_NOT_FOUND", "ROOM_EXPIRED") && journal!!.state!!.pending == null) {
+                withContext(Dispatchers.IO) { journal!!.completeExit() }
+                publish()
+            }
+            throw error
+        }
+    }
+
+    private fun publish() {
+        val saved = journal?.state ?: return
+        mutable.update { it.copy(room = saved.room, pending = saved.pending != null) }
+    }
+
+    private fun ensureWatcher() {
+        val code = journal?.state?.room?.code
+        if (clients == 0 || code == null) {
+            watcher?.cancel(); watcher = null; watchedCode = null
+            return
+        }
+        if (watchedCode == code && watcher?.isActive == true) return
+        watcher?.cancel(); watchedCode = code
+        watcher = scope.launch {
+            while (isActive) {
+                try {
+                    snapshots(code).collect { (room, fromCache) ->
+                        mutex.withLock {
+                            if (journal?.state?.room?.code != code) return@withLock
+                            if (fromCache) mutable.update { it.copy(connected = false) }
+                            else {
+                                withContext(Dispatchers.IO) { journal!!.accept(room) }
+                                mutable.update { it.copy(connected = true,
+                                    error = if (it.error == "Live updates disconnected. Reconnecting…") null else it.error) }
+                                publish()
+                            }
+                        }
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) {
+                    mutable.update { it.copy(connected = false, error = "Live updates disconnected. Reconnecting…") }
+                    delay(3000)
+                    mutex.withLock {
+                        try {
+                            if (journal?.state?.room?.code == code) refresh(code)
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { /* Keep the last confirmed board and retry the listener. */ }
+                    }
+                    if (journal?.state?.room?.code != code) return@launch
+                }
+            }
+        }
+    }
+
+    private fun snapshots(code: String) = callbackFlow {
+        val registration = Firebase.firestore.collection("authoritativeRooms").document(code)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) { close(error); return@addSnapshotListener }
+                if (snapshot == null || !snapshot.exists()) { close(IllegalStateException("Room unavailable")); return@addSnapshotListener }
+                try {
+                    val room = RoomCodec.decode(JSONObject(requireNotNull(snapshot.getString("snapshot"))))
+                    trySend(room to snapshot.metadata.isFromCache)
+                } catch (error: Exception) { close(error) }
+            }
         awaitClose { registration.remove() }
     }
 
-    // ── Game start ────────────────────────────────────────────────────────────
-
-    /** Host calls this. Assigns colors to players in join order and sets status to IN_PROGRESS. */
-    suspend fun startGame(roomId: String, hostUid: String): Result<Unit> {
-        return try {
-            firestore.runTransaction { tx ->
-                val ref = rooms.document(roomId)
-                val snapshot = tx.get(ref)
-                if (snapshot.getString("hostUid") != hostUid) {
-                    throw FirebaseFirestoreException(
-                        "Only the host can start the game.",
-                        FirebaseFirestoreException.Code.PERMISSION_DENIED
-                    )
-                }
-                @Suppress("UNCHECKED_CAST")
-                val rawPlayers = snapshot.get("players") as? List<Map<String, Any>> ?: emptyList()
-                val colors = PlayerColor.entries.map { it.name }
-                val updatedPlayers = rawPlayers.mapIndexed { index, p ->
-                    p.toMutableMap().apply { put("color", colors.getOrElse(index) { "" }) }
-                }
-                tx.update(ref, mapOf("players" to updatedPlayers, "status" to RoomStatus.IN_PROGRESS.name))
-            }.await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+    companion object {
+        @Volatile private var instance: OnlineGameRepository? = null
+        fun get(context: Context): OnlineGameRepository = instance ?: synchronized(this) {
+            instance ?: OnlineGameRepository(context.applicationContext).also { instance = it }
         }
-    }
-
-    // ── Leave room ────────────────────────────────────────────────────────────
-
-    suspend fun leaveRoom(roomId: String, uid: String) {
-        try {
-            val ref = rooms.document(roomId)
-            firestore.runTransaction { tx ->
-                val snapshot = tx.get(ref)
-                @Suppress("UNCHECKED_CAST")
-                val players = snapshot.get("players") as? List<Map<String, Any>> ?: return@runTransaction
-                val remaining = players.filter { it["uid"] != uid }
-
-                if (remaining.isEmpty()) {
-                    // No one left — delete the room
-                    tx.delete(ref)
-                } else {
-                    val update = mutableMapOf<String, Any>("players" to remaining)
-                    // If the host left, promote the next player
-                    if (snapshot.getString("hostUid") == uid) {
-                        update["hostUid"] = remaining.first()["uid"] as String
-                        update["players"] = remaining.mapIndexed { i, p ->
-                            p.toMutableMap().apply { put("isHost", i == 0) }
-                        }
-                    }
-                    tx.update(ref, update)
-                }
-            }.await()
-        } catch (_: Exception) { /* best-effort */ }
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private fun playerMap(profile: UserProfile, color: String, isHost: Boolean): Map<String, Any> =
-        mapOf(
-            "uid"      to profile.uid,
-            "name"     to profile.name,
-            "platform" to "android",
-            "color"    to color,
-            "isHost"   to isHost
-        )
-
-    @Suppress("UNCHECKED_CAST")
-    private fun docToRoom(id: String, data: Map<String, Any>): GameRoom {
-        val rawPlayers = data["players"] as? List<Map<String, Any>> ?: emptyList()
-        val players = rawPlayers.map { p ->
-            RoomPlayer(
-                uid      = p["uid"] as? String ?: "",
-                name     = p["name"] as? String ?: "Player",
-                platform = p["platform"] as? String ?: "android",
-                color    = p["color"] as? String ?: "",
-                isHost   = p["isHost"] as? Boolean ?: false
-            )
-        }
-        val status = try { RoomStatus.valueOf(data["status"] as? String ?: "") }
-        catch (_: Exception) { RoomStatus.WAITING }
-
-        return GameRoom(
-            id         = id,
-            roomCode   = data["roomCode"] as? String ?: "",
-            status     = status,
-            maxPlayers = (data["maxPlayers"] as? Long)?.toInt() ?: 4,
-            players    = players,
-            hostUid    = data["hostUid"] as? String ?: "",
-            createdAt  = (data["createdAt"] as? Long) ?: 0L
-        )
-    }
-
-    // ── Move sync (Phase 4) ───────────────────────────────────────────────────
-
-    suspend fun fetchRoom(roomId: String): Result<GameRoom> {
-        return try {
-            val doc = rooms.document(roomId).get().await()
-            val data = doc.data ?: return Result.failure(Exception("Room not found"))
-            Result.success(docToRoom(roomId, data))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun writeMove(roomId: String, move: OnlineMove): Result<Unit> {
-        return try {
-            val data = mapOf(
-                "index"          to move.index,
-                "actorId"        to move.actorId,
-                "movingPlayerId" to move.movingPlayerId,
-                "diceValue"      to move.diceValue,
-                "pieceId"        to move.pieceId,
-                "deferHomeEntry" to move.deferHomeEntry
-            )
-            rooms.document(roomId)
-                .collection("moves")
-                .document(move.index.toString())
-                .set(data)
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    fun listenToMoves(roomId: String): Flow<List<OnlineMove>> = callbackFlow {
-        val reg = rooms.document(roomId)
-            .collection("moves")
-            .orderBy("index")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
-                val moves = snapshot.documents.mapNotNull { doc ->
-                    val d = doc.data ?: return@mapNotNull null
-                    OnlineMove(
-                        index          = (d["index"] as? Long)?.toInt() ?: return@mapNotNull null,
-                        actorId        = (d["actorId"] as? Long)?.toInt() ?: return@mapNotNull null,
-                        movingPlayerId = (d["movingPlayerId"] as? Long)?.toInt() ?: return@mapNotNull null,
-                        diceValue      = (d["diceValue"] as? Long)?.toInt() ?: return@mapNotNull null,
-                        pieceId        = (d["pieceId"] as? Long)?.toInt() ?: return@mapNotNull null,
-                        deferHomeEntry = d["deferHomeEntry"] as? Boolean ?: false
-                    )
-                }
-                trySend(moves)
-            }
-        awaitClose { reg.remove() }
-    }
-
-    /** Generates a 6-char code using unambiguous characters, retrying until unique. */
-    private suspend fun generateUniqueCode(): String {
-        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        repeat(10) {
-            val code = (1..6).map { chars.random() }.joinToString("")
-            val exists = rooms
-                .whereEqualTo("roomCode", code)
-                .whereEqualTo("status", RoomStatus.WAITING.name)
-                .limit(1)
-                .get()
-                .await()
-                .isEmpty
-            if (exists) return code
-        }
-        // Fallback: use timestamp-based suffix — collision astronomically unlikely
-        return "R${System.currentTimeMillis().toString().takeLast(5)}"
     }
 }

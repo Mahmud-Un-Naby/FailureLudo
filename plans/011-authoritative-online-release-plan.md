@@ -17,7 +17,7 @@ start promptly but must not permanently advance an unconfirmed game.
 
 ## Delivery increments
 
-1. **Backend foundation (current implementation)**
+1. **Backend foundation (implemented; integration checks open)**
    - Standalone `online-server` JVM module depends on the existing engine.
    - Authenticated HTTP create/join/start/roll/move/read endpoints, including guests.
    - Cryptographic server dice; engine validation for pawn and home-entry selection.
@@ -25,7 +25,7 @@ start promptly but must not permanently advance an unconfirmed game.
    - Versioned snapshots and separate collections from the old client-written preview.
    - Tests for authority, concurrency, retry, serialization and HTTP boundaries;
      emulator checks for persistence and access rules; container packaging.
-2. **Android migration and release entry**
+2. **Android migration and release entry (implemented; device checks open)**
    - Create/reuse anonymous identity automatically; remove mandatory auth-screen step.
    - Replace legacy room/move writes and local online dice with the HTTP command API.
    - Observe member-readable confirmed snapshots; persist room/request IDs for recovery.
@@ -34,8 +34,9 @@ start promptly but must not permanently advance an unconfirmed game.
    - Include online navigation in release; configure backend URL without debug-only gating.
    - Disable legacy client-write collections as part of coordinated migration.
 3. **Complete multiplayer lifecycle and operations**
-   - Specify and implement waiting-room leave/host transfer, resignation, disconnect
-     grace periods, deadlines and abandoned-room cleanup, with regression coverage.
+   - Waiting-room leave/host transfer is implemented with Android migration. Specify
+     and implement resignation, disconnect grace periods, deadlines and abandoned-room
+     cleanup, with regression coverage.
    - Add durable action history/replay and rules-version rollout/migration policy.
    - Set quotas/rate limits, abuse controls for guests, receipt retention, monitoring,
      least-privilege service identity, dependency/container maintenance and cost limits.
@@ -100,7 +101,43 @@ These are unresolved checks, not passing results. Run the commands in the server
 once network access is reliable. Real Firebase token verification and two-device play
 also remain unverified; HTTP unit tests inject a test identity verifier.
 
-Next increment is Android migration and release entry (step 2), with the outstanding
-emulator/container checks completed before deployment. Android still uses the retained
-online preview; adding a backend module alone does not enable authoritative online play
-in the app. No cloud resources, backend/rules deployments or publication were performed.
+## Android migration results — 28 September 2026
+
+Implemented increment 2:
+- Shared `online-protocol` model/codec with the backend; no Firebase Admin dependency
+  is included in Android. Engine rules and offline persistence were not changed.
+- Automatic anonymous identity, HTTPS command transport, refresh-on-401, and room
+  snapshot subscription using member-only `authoritativeRooms` reads.
+- Durable active-room and pending-request recovery in an atomic no-backup file. Pending
+  writes survive timeouts, process death and invalid responses with the same request ID.
+  Definitive rejections clear them; 401/408/429/5xx and network errors retain them.
+- Revisions apply monotonically, pending actions block new input, and cached Firestore
+  snapshots do not enable moves. Live-listener failures show reconnection/retry controls.
+- Tabletop board/corner dice, tested pawn paths and capture effects, sound/volume/speed,
+  reduced-motion and haptic preferences. Reconnect gaps snap to confirmed state rather
+  than animating invented moves. Explicit event counts support the bounded server log.
+- Team and free-for-all lobby; eight-character codes; active room resume; transactional
+  waiting-room leave, host transfer and closed empty rooms. Receipt retries after leaving
+  cannot reveal subsequent room state or new members.
+- Online navigation in release. Configure the public service origin using
+  `-PonlineApiUrl=https://YOUR-SERVICE.run.app`; unset configuration displays an online
+  unavailable message without initiating guest authentication. No deployed URL was invented.
+- Removed Android legacy move-relay code. Checked-in rules close legacy rooms/moves to
+  clients; deploy rules/backend/app together only after authorization. Data is preserved.
+
+Verification: 122 Android unit tests passed, including eight new recovery tests. Debug
+and signed/minified release APKs built, with Play upload-certificate verification and
+release vital lint passing. All 23 backend tests passed, including host-transfer and
+receipt privacy regressions. Device/visual/audio tests were not run.
+
+Artifacts: `app/build/outputs/apk/debug/app-debug.apk` and
+`app/build/outputs/apk/release/app-release.apk`. Both currently have an empty service
+URL and therefore offer offline play plus the online unavailable screen. A configured,
+authorized backend and real two-device verification are required for online play.
+
+Remaining: emulator integration and container checks from the previous handoff are still
+open (no complete cached runtime was available), as are real Firebase identity validation,
+live reconnect/process-death scenarios on devices, release/device review and deployment.
+Waiting-room leave is complete; active-game resignation/disconnect deadlines, abuse/rate
+limits, cleanup and durable online history are the next implementation increment.
+No backend/rules deployment or publication was performed.

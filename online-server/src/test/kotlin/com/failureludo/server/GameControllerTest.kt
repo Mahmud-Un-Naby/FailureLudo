@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.failureludo.engine.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -109,7 +111,7 @@ class GameControllerTest {
         die = 2
         val after = act(initial, Command.Roll).room
         assertEquals(TurnPhase.WAITING_FOR_ROLL, after.game!!.turnPhase)
-        assertEquals(PlayerColor.BLUE, after.game.currentPlayer.color)
+        assertEquals(PlayerColor.BLUE, after.game!!.currentPlayer.color)
         assertEquals(2, after.lastAction!!.dice)
     }
 
@@ -167,6 +169,45 @@ class GameControllerTest {
         assertNull(store.get("ZZZZZZZZ"))
     }
 
+    @Test fun `host leave transfers authority and last leave closes room without reusing code`() {
+        val created = controller.create("host", id(), "Host", 2, GameMode.FREE_FOR_ALL).room
+        val joined = controller.execute("guest1", created.code, id(), null, Command.Join("Guest")).room
+        val request = id()
+        val exit = act(joined, Command.Leave, request = request).room
+        assertEquals(RoomStatus.CLOSED, exit.status)
+        assertTrue(exit.members.isEmpty())
+        val left = controller.get("guest1", created.code)
+        assertEquals("guest1", left.hostUid)
+        assertEquals(1, left.members.size)
+        assertEquals(exit, act(joined, Command.Leave, request = request).room)
+        error("NOT_A_MEMBER") { controller.get("host", created.code) }
+        val closed = act(left, Command.Leave, "guest1").room
+        assertEquals(RoomStatus.CLOSED, closed.status)
+        error("ALREADY_STARTED") { controller.execute("late", created.code, id(), null, Command.Join("Late")) }
+    }
+
+    @Test fun `old receipts cannot expose snapshots after membership ends`() {
+        val createId = id()
+        val created = controller.create("host", createId, "Host", 2, GameMode.FREE_FOR_ALL).room
+        val joined = controller.execute("guest1", created.code, id(), null, Command.Join("Guest")).room
+        val leaveId = id()
+        act(joined, Command.Leave, request = leaveId)
+        val next = controller.execute("new-player", created.code, id(), null, Command.Join("New")).room
+        val playing = act(next, Command.Start, "guest1").room
+        error("NOT_A_MEMBER") { controller.create("host", createId, "Host", 2, GameMode.FREE_FOR_ALL) }
+        val repeatedExit = act(joined, Command.Leave, request = leaveId).room
+        assertEquals(joined.revision + 1, repeatedExit.revision)
+        assertNull(repeatedExit.game)
+        assertTrue(repeatedExit.members.isEmpty())
+        assertEquals(playing, controller.get("guest1", playing.code))
+    }
+
+    @Test fun `leave racing with start does not remove a playing seat`() {
+        val started = room()
+        error("ALREADY_STARTED") { act(started, Command.Leave) }
+        assertEquals(started, controller.get("host", started.code))
+    }
+
     @Test fun `complete free for all and team games survive snapshot round trips`() {
         for (mode in GameMode.entries) {
             val memory = MemoryRoomStore()
@@ -185,6 +226,9 @@ class GameControllerTest {
                 }
                 current = api.execute(actor, current.code, id(), current.revision, command).room
                 assertTrue(current.game!!.eventLog.size <= 32)
+                val count = current.lastAction!!.eventCount
+                assertTrue(count in 0..32)
+                if (command is Command.Move) assertTrue(count > 0)
             }
             assertEquals("Game did not finish: $mode", RoomStatus.FINISHED, current.status)
             assertTrue(current.game!!.winners!!.isNotEmpty())

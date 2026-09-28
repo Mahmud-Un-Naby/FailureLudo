@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import org.json.JSONObject
 
 /** Test-only transactional fake; production always persists through Firestore. */

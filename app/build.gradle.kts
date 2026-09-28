@@ -1,4 +1,5 @@
 import java.io.File
+import java.net.URI
 import java.io.FileInputStream
 import java.util.Properties
 import java.security.KeyStore
@@ -56,6 +57,14 @@ val verifyPlayUploadKey = tasks.register("verifyPlayUploadKey") {
 tasks.matching { it.name == "preReleaseBuild" || it.name == "validateSigningRelease" }
     .configureEach { dependsOn(verifyPlayUploadKey) }
 
+// Deployment supplies a public HTTPS service URL; an unset URL shows an unavailable screen.
+val onlineApiUrl = providers.gradleProperty("onlineApiUrl").orElse("").get().trim().trimEnd('/')
+require(onlineApiUrl.isEmpty() || runCatching {
+    val uri = URI(onlineApiUrl)
+    uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
+        uri.rawQuery == null && uri.rawFragment == null && uri.path.isNullOrEmpty()
+}.getOrDefault(false)) { "onlineApiUrl must be an HTTPS origin without credentials, path or query" }
+
 android {
     namespace = "com.failureludo"
     compileSdk = 36
@@ -66,6 +75,7 @@ android {
         targetSdk = 36
         versionCode = 13
         versionName = "1.0.9"
+        buildConfigField("String", "ONLINE_API_URL", "\"$onlineApiUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -118,6 +128,7 @@ android {
 
 dependencies {
     implementation(project(":game-engine"))
+    implementation(project(":online-protocol"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)

@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.google.cloud.firestore.DocumentSnapshot
 import com.google.cloud.firestore.Firestore
 import org.json.JSONObject
@@ -48,6 +50,7 @@ class FirestoreRoomStore(private val db: Firestore) : RoomStore {
     } catch (error: ExecutionException) {
         val causes = generateSequence<Throwable>(error) { it.cause }.toList()
         causes.filterIsInstance<ApiException>().firstOrNull()?.let { throw it }
+        causes.filterIsInstance<UnsupportedRoomVersion>().firstOrNull()?.let { throw it }
         throw ApiException(503, "STORE_UNAVAILABLE", "Storage unavailable. Retry with the same request ID.")
     } catch (error: TimeoutException) {
         // A timed-out write may still commit. Its receipt makes a retry safe.

@@ -1,5 +1,7 @@
 package com.failureludo.server
 
+import com.failureludo.online.*
+
 import com.failureludo.engine.GameMode
 import com.google.cloud.NoCredentials
 import com.google.cloud.firestore.Firestore
@@ -78,6 +80,9 @@ class FirestoreIntegrationTest {
         assertEquals(403, rest("PATCH", "authoritativeRooms/ZZZZZZZZ", "host"))
         assertEquals(403, rest("GET", "authoritativeRequests/anything", "host"))
         assertEquals(403, rest("PATCH", "authoritativeRequests/anything", "host"))
+        assertEquals(403, rest("GET", "rooms/legacy", "host"))
+        assertEquals(403, rest("PATCH", "rooms/legacy", "host"))
+        assertEquals(403, rest("PATCH", "rooms/legacy/moves/0", "host"))
     }
 
     private fun rest(method: String, document: String, uid: String?): Int {

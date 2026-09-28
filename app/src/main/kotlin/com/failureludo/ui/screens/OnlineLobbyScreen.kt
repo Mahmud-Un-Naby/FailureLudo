@@ -1,220 +1,82 @@
 package com.failureludo.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.failureludo.data.online.GameRoom
-import com.failureludo.ui.theme.*
-import com.failureludo.viewmodel.LobbyState
+import com.failureludo.data.online.OnlineSessionState
+import com.failureludo.engine.GameMode
+import com.failureludo.online.OnlineRoom
+import com.failureludo.online.RoomStatus
 import com.failureludo.viewmodel.OnlineLobbyViewModel
-import kotlinx.coroutines.flow.collectLatest
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OnlineLobbyScreen(
-    viewModel: OnlineLobbyViewModel,
-    onBack: () -> Unit,
-    onRoomReady: (GameRoom) -> Unit
-) {
+fun OnlineLobbyScreen(viewModel: OnlineLobbyViewModel, onBack: () -> Unit, onRoomReady: (OnlineRoom) -> Unit) {
     val state by viewModel.state.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
-    var joinCode by rememberSaveable { mutableStateOf("") }
-    var selectedPlayerCount by rememberSaveable { mutableIntStateOf(4) }
-    val keyboard = LocalSoftwareKeyboardController.current
-
-    LaunchedEffect(Unit) {
-        viewModel.errors.collectLatest { snackbarHostState.showSnackbar(it) }
-    }
-
-    LaunchedEffect(state) {
-        if (state is LobbyState.RoomReady) {
-            onRoomReady((state as LobbyState.RoomReady).room)
-            viewModel.resetState()
+    var code by rememberSaveable { mutableStateOf("") }
+    var players by rememberSaveable { mutableIntStateOf(4) }
+    var team by rememberSaveable { mutableStateOf(false) }
+    var entering by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.room?.code, state.busy, state.pending) {
+        if (entering && !state.busy && !state.pending && state.room != null) {
+            entering = false
+            onRoomReady(state.room!!)
         }
     }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Play Online") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Primary,
-                    titleContentColor = OnPrimary,
-                    navigationIconContentColor = OnPrimary
-                )
-            )
-        },
-        containerColor = Background
-    ) { padding ->
-        val isLoading = state is LobbyState.Loading
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-
-            // ── Create Room ───────────────────────────────────────────────────
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Create Room",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OnSurface
-                    )
-
-                    // Player count selector
-                    Text(
-                        text = "Players",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Secondary
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(2, 3, 4).forEach { count ->
-                            val selected = selectedPlayerCount == count
-                            FilterChip(
-                                selected = selected,
-                                onClick = { selectedPlayerCount = count },
-                                label = { Text("$count") },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Primary,
-                                    selectedLabelColor = OnPrimary
-                                )
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = { viewModel.createRoom(selectedPlayerCount) },
-                        enabled = !isLoading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = OnPrimary,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Create Room", color = OnPrimary)
-                        }
+    Scaffold(topBar = { TopAppBar(title = { Text("Play online") }, navigationIcon = {
+        TextButton(onClick = onBack) { Text("Back") }
+    }) }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Play with friends. No Google account needed.")
+            OnlineConnectionStatus(state, viewModel::retry)
+            val room = state.room
+            if (room != null) {
+                Text("Room ${room.code} · ${room.members.size}/${room.maxPlayers} players")
+                if (room.status == RoomStatus.FINISHED || room.status == RoomStatus.CLOSED) {
+                    Button(onClick = viewModel::forgetFinished, enabled = !state.busy && !state.pending) { Text("New room") }
+                    if (room.status == RoomStatus.FINISHED) TextButton(onClick = { onRoomReady(room) }) { Text("View result") }
+                } else Button(onClick = { onRoomReady(room) }, enabled = !state.busy) { Text("Resume room") }
+            } else if (state.configured) {
+                Text("Create a room", style = MaterialTheme.typography.titleLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(2, 3, 4).forEach { count ->
+                        FilterChip(selected = players == count, enabled = !team && !state.busy && !state.pending,
+                            onClick = { players = count }, label = { Text("$count players") })
                     }
                 }
-            }
-
-            // ── Join Room ─────────────────────────────────────────────────────
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Join Room",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OnSurface
-                    )
-
-                    OutlinedTextField(
-                        value = joinCode,
-                        onValueChange = { joinCode = it.uppercase().take(6) },
-                        label = { Text("Room Code") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            imeAction = ImeAction.Go
-                        ),
-                        keyboardActions = KeyboardActions(onGo = {
-                            keyboard?.hide()
-                            viewModel.joinRoom(joinCode)
-                        }),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    Button(
-                        onClick = { keyboard?.hide(); viewModel.joinRoom(joinCode) },
-                        enabled = !isLoading && joinCode.isNotBlank(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                    ) {
-                        Text("Join Room", color = OnPrimary)
-                    }
+                Row {
+                    Checkbox(checked = team, enabled = !state.busy && !state.pending,
+                        onCheckedChange = { team = it; if (it) players = 4 })
+                    Text("Team game · 4 players", Modifier.padding(top = 12.dp))
                 }
+                Button(onClick = { entering = true; viewModel.createRoom(players, if (team) GameMode.TEAM else GameMode.FREE_FOR_ALL) },
+                    enabled = !state.busy && !state.pending && state.uid != null) { Text("Create room") }
+                HorizontalDivider()
+                OutlinedTextField(value = code, onValueChange = { code = it.uppercase(Locale.ROOT).filter(Char::isLetterOrDigit).take(8) },
+                    label = { Text("Eight-character room code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button(onClick = { entering = true; viewModel.joinRoom(code) },
+                    enabled = !state.busy && !state.pending && state.uid != null && code.length == 8) { Text("Join room") }
             }
+        }
+    }
+}
 
-            // ── Find Match (Phase 6) ──────────────────────────────────────────
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Find Match",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OnSurface
-                    )
-                    Text(
-                        text = "Automatic matchmaking against random opponents.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Secondary
-                    )
-                    Button(
-                        onClick = {},
-                        enabled = false,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Coming Soon")
-                    }
-                }
-            }
+@Composable
+internal fun OnlineConnectionStatus(state: OnlineSessionState, onRetry: () -> Unit) {
+    when {
+        state.busy -> LinearProgressIndicator(Modifier.fillMaxWidth())
+        !state.configured -> Text("Online play is not available in this build yet. Offline games are ready to play.")
+        state.error != null || state.pending || (state.room != null && !state.connected) -> {
+            Text(state.error ?: if (state.pending) "An action is waiting for confirmation." else "Reconnecting to your room…")
+            if (state.pending) Text("Retry will recover the same action.", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onRetry) { Text("Retry connection") }
         }
     }
 }

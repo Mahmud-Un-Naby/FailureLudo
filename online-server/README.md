@@ -1,8 +1,9 @@
 # Failure Ludo online server
 
 Kotlin/JVM HTTP service intended for Cloud Run, using the existing `game-engine`.
-This is the first increment of [plan 011](../plans/011-authoritative-online-release-plan.md).
-Android has not yet switched from its legacy client-written online preview to this API.
+This implements the backend and Android command protocol in
+[plan 011](../plans/011-authoritative-online-release-plan.md). Android uses this API
+and shares its snapshot model/codec through `online-protocol`.
 No backend or rules have been deployed by this change.
 
 ## Build and verify
@@ -79,12 +80,17 @@ Join, `POST /v1/rooms/ABCDEFGH/commands`:
 {"requestId":"unique-request-id-0002","type":"JOIN","name":"Second guest"}
 ```
 
-Start/roll use the same command endpoint:
+Start/roll/leave use the same command endpoint:
 
 ```json
 {"requestId":"unique-request-id-0003","type":"START","expectedRevision":1}
 {"requestId":"unique-request-id-0004","type":"ROLL","expectedRevision":2}
 ```
+
+`LEAVE` is accepted only while waiting and also requires `expectedRevision`. The host
+transfers to the first remaining member; the last exit closes the room. The response
+contains a sanitized closed-room acknowledgement with no members or game state, even
+for retries. Old create/join receipts do not let a former member read later snapshots.
 
 Move a pawn using the engine's player ID (1–4) and pawn ID (0–3):
 
@@ -101,6 +107,8 @@ snapshot with `GET /v1/rooms/ABCDEFGH`. Only members can read it. Snapshot field
 `protocolVersion`, `rulesVersion`, `revision`, `members`, `status`, `game`, and
 `lastAction`. The game includes every engine field needed for exact restoration.
 The room revision covers lobby changes and individual roll/move commands, not just turns.
+`lastAction.eventCount` identifies the new events at the end of the bounded game event
+log, so repeated moves still trigger feedback after earlier events have been trimmed.
 
 Reuse the same request ID and payload after timeout, connection loss or HTTP 503.
 The receipt and room commit atomically, so a lost response cannot cause a second roll
@@ -121,13 +129,29 @@ are server-only. `authoritativeRequests/{hash}` contains private durable receipt
 No room state is kept in service memory. Request fingerprints and IDs are scoped to
 the verified UID. A transaction callback reuses its candidate roll if Firestore retries.
 
-Existing `rooms`/`moves` collections and their preview rules remain unchanged until
-Android migration. They do not grant access to the new authoritative collections.
-The new namespace rules are covered by emulator tests but must be deployed separately
-with authorization before a real client can use Firestore snapshot subscriptions.
+Checked-in rules now deny client access to legacy `rooms`/`moves` collections. Data is
+retained. Deploy the rules as part of the coordinated backend/app migration; older
+preview clients (including the paused web client) will no longer write those rooms.
+Emulator regression tests include these denials but their execution remains blocked
+by the runtime download failures recorded in plan 011. Nothing has been deployed.
 
-This increment has no leave/resign/timeout policy, matchmaking, permanent action archive,
-rate limiting, cleanup or Android transport. Recent game events are limited to 32 for
+Android build configuration:
+
+```sh
+./gradlew :app:assembleDebug :app:assembleRelease -PonlineApiUrl=https://YOUR-SERVICE.run.app
+```
+
+Use the actual authorized service origin and the matching Firebase project. The property
+accepts HTTPS origins only, with no path, credentials, query or fragment. Without it,
+release and debug still show online entry but explain that online play is unavailable.
+The app creates/reuses a guest session automatically and saves pending commands before
+sending, using an atomic no-backup journal bound to UID and origin. It retries ambiguous
+writes with the same request ID, refreshes an expired token once, and accepts only
+monotonically newer confirmed state. No backend token or private credential is stored.
+
+Active-game resignation/timeouts, matchmaking, permanent action archive, rate limiting
+and cleanup are not implemented. Returning to the lobby during play preserves the seat;
+other players may wait for that player. Recent game events are limited to 32 for
 presentation. These gaps and two-device/release validation are tracked in plan 011.
 Receipts must not be deleted while their room can still accept commands. Do not roll
 out incompatible rules under the same rules version; migration is a separate release task.

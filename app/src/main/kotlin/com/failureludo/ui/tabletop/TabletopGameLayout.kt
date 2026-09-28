@@ -24,9 +24,10 @@ import com.failureludo.engine.*
 fun TabletopGameLayout(
     state: GameState, palette: Map<PlayerColor, Color>, diceValue: Int?, rollId: Long,
     rolling: Boolean, reducedMotion: Boolean, canRoll: Boolean, inputBlocked: Boolean,
-    onRoll: () -> Unit, board: @Composable (Modifier) -> Unit, modifier: Modifier = Modifier
+    onRoll: () -> Unit, board: @Composable (Modifier) -> Unit, modifier: Modifier = Modifier,
+    statusOverride: String? = null
 ) {
-    val status = when {
+    val status = statusOverride ?: when {
         rolling -> "Rolling…"
         inputBlocked -> "Moving…"
         state.turnPhase == TurnPhase.GAME_OVER -> "Game complete"

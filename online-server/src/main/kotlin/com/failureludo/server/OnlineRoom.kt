@@ -1,31 +1,14 @@
 package com.failureludo.server
 
-import com.failureludo.engine.GameMode
-import com.failureludo.engine.GameState
-import com.failureludo.engine.PlayerColor
+import com.failureludo.online.*
 
-const val PROTOCOL_VERSION = 1
-const val RULES_VERSION = "2026-09-23"
-
-enum class RoomStatus { WAITING, PLAYING, FINISHED }
-data class Member(val uid: String, val name: String, val color: PlayerColor)
-data class LastAction(val type: String, val uid: String, val dice: Int? = null)
-data class OnlineRoom(
-    val code: String,
-    val hostUid: String,
-    val maxPlayers: Int,
-    val mode: GameMode,
-    val members: List<Member>,
-    val revision: Long = 0,
-    val status: RoomStatus = RoomStatus.WAITING,
-    val game: GameState? = null,
-    val lastAction: LastAction? = null
-)
+import com.failureludo.online.*
 
 sealed interface Command {
     data class Join(val name: String) : Command
     data object Start : Command
     data object Roll : Command
+    data object Leave : Command
     data class Move(val playerId: Int, val pieceId: Int, val deferHomeEntry: Boolean) : Command
 }
 

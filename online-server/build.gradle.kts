@@ -13,6 +13,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEa
 application { mainClass.set("com.failureludo.server.MainKt") }
 dependencies {
     implementation(project(":game-engine"))
+    implementation(project(":online-protocol"))
     implementation("org.json:json:20240303")
     implementation("com.google.firebase:firebase-admin:9.11.0")
     testImplementation(libs.junit)
