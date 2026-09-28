@@ -22,8 +22,17 @@ data class FeedbackSettings(
     val reducedMotion: Boolean = false,
     val soundSelections: Map<FeedbackEvent, String> = emptyMap(),
     val forwardPawnSpeed: Float = PawnMovementSpeed.DEFAULT,
-    val backwardPawnSpeed: Float = PawnMovementSpeed.DEFAULT
-)
+    val backwardPawnSpeed: Float = PawnMovementSpeed.DEFAULT,
+    val soundVolumes: Map<FeedbackEvent, Float> = emptyMap()
+) {
+    fun categoryVolume(event: FeedbackEvent): Float = sanitizeVolume(soundVolumes[event] ?: 1f)
+
+    fun effectiveVolume(event: FeedbackEvent): Float =
+        if (soundEnabled) sanitizeVolume(masterVolume) * categoryVolume(event) else 0f
+}
+
+private fun sanitizeVolume(volume: Float): Float =
+    if (volume.isFinite()) volume.coerceIn(0f, 1f) else 1f
 
 private val Context.feedbackPreferencesDataStore by preferencesDataStore(name = "feedback_preferences")
 
@@ -51,6 +60,9 @@ class GamePreferencesStore(private val context: Context) {
 
 internal fun MutablePreferences.writeFeedbackSettings(settings: FeedbackSettings) {
     writeSoundSelections(settings.soundSelections)
+    SoundCatalog.categories.forEach { category ->
+        this[soundVolumeKey(category.event)] = settings.categoryVolume(category.event)
+    }
     this[Keys.REDUCED_MOTION] = settings.reducedMotion
     this[Keys.SOUND_ENABLED] = settings.soundEnabled
     this[Keys.MUSIC_ENABLED] = settings.musicEnabled
@@ -63,6 +75,9 @@ internal fun MutablePreferences.writeFeedbackSettings(settings: FeedbackSettings
 
 internal fun Preferences.toFeedbackSettings(): FeedbackSettings = FeedbackSettings(
     soundSelections = readSoundSelections(),
+    soundVolumes = SoundCatalog.categories.associate { category ->
+        category.event to sanitizeVolume(this[soundVolumeKey(category.event)] ?: 1f)
+    },
     reducedMotion = this[Keys.REDUCED_MOTION] ?: false,
     soundEnabled = this[Keys.SOUND_ENABLED] ?: true,
     musicEnabled = this[Keys.MUSIC_ENABLED] ?: false,
@@ -87,3 +102,6 @@ internal fun MutablePreferences.writeSoundSelections(selections: Map<FeedbackEve
 
 private fun soundSelectionKey(event: FeedbackEvent) =
     stringPreferencesKey("sound_selection_${event.settingsId}")
+
+private fun soundVolumeKey(event: FeedbackEvent) =
+    floatPreferencesKey("sound_volume_${event.settingsId}")

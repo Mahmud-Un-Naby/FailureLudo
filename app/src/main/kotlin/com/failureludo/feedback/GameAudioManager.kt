@@ -79,26 +79,27 @@ class GameAudioManager(context: Context) {
     }
 
     @Synchronized
-    fun play(option: SoundOption, masterVolume: Float): Boolean {
+    fun play(option: SoundOption, volumeScale: Float): Boolean {
         if (released) return false
         load(option.resourceId)
-        return playReady(option, masterVolume) != 0
+        return playReady(option, volumeScale) != 0
     }
 
     @Synchronized
-    fun preview(option: SoundOption, masterVolume: Float) {
+    fun preview(option: SoundOption, volumeScale: Float) {
         if (released) return
         soundPool.stop(previewStreamId)
         pendingPreview = null
         val sampleId = load(option.resourceId)
-        if (sampleId in readySoundIds) previewStreamId = playReady(option, masterVolume)
-        else if (sampleId != 0) pendingPreview = option to masterVolume
+        if (sampleId in readySoundIds) previewStreamId = playReady(option, volumeScale)
+        else if (sampleId != 0) pendingPreview = option to volumeScale
     }
 
-    private fun playReady(option: SoundOption, masterVolume: Float): Int {
+    private fun playReady(option: SoundOption, volumeScale: Float): Int {
         val sampleId = loadedSoundIds[option.resourceId] ?: return 0
         if (sampleId !in readySoundIds) return 0
-        val volume = (masterVolume.coerceIn(0f, 1f) * option.gain).coerceIn(0f, 1f)
+        val volume = (volumeScale.coerceIn(0f, 1f) * option.gain).coerceIn(0f, 1f)
+        if (volume <= 0f) return 0
         val pitch = if (option.pitchMin == option.pitchMax) option.pitchMin
         else Random.nextDouble(option.pitchMin.toDouble(), option.pitchMax.toDouble()).toFloat()
         return soundPool.play(sampleId, volume, volume, 1, 0, pitch)

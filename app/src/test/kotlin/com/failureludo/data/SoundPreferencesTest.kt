@@ -1,6 +1,7 @@
 package com.failureludo.data
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -73,4 +74,47 @@ class SoundPreferencesTest {
         assertEquals(defaults[FeedbackEvent.CAPTURE],
             preferences[stringPreferencesKey("sound_selection_capture")])
     }
+
+    @Test fun existingInstallationsKeepTheirVolumeUntilCategoriesAreAdjusted() {
+        val settings = mutablePreferencesOf(floatPreferencesKey("master_volume") to 0.6f).toFeedbackSettings()
+        SoundCatalog.categories.forEach {
+            assertEquals(1f, settings.categoryVolume(it.event), 0f)
+            assertEquals(0.6f, settings.effectiveVolume(it.event), 0f)
+        }
+    }
+
+    @Test fun categoryVolumesRoundTripIndependentlyAndCombineWithMasterVolume() {
+        val preferences = mutablePreferencesOf()
+        preferences.writeFeedbackSettings(FeedbackSettings(masterVolume = 0.6f,
+            soundSelections = mapOf(FeedbackEvent.DICE_ROLL to "wooden_dice_light"),
+            soundVolumes = mapOf(FeedbackEvent.DICE_ROLL to 0.25f, FeedbackEvent.CAPTURE to 0f)))
+        val restored = preferences.toFeedbackSettings()
+        assertEquals(0.25f, preferences[floatPreferencesKey("sound_volume_dice_roll")]!!, 0f)
+        assertEquals(0.15f, restored.effectiveVolume(FeedbackEvent.DICE_ROLL), 0.0001f)
+        assertEquals(0f, restored.effectiveVolume(FeedbackEvent.CAPTURE), 0f)
+        assertEquals(0.6f, restored.effectiveVolume(FeedbackEvent.PIECE_MOVE), 0f)
+        assertEquals("wooden_dice_light", restored.soundSelections[FeedbackEvent.DICE_ROLL])
+
+        preferences.writeFeedbackSettings(restored.copy(soundEnabled = false))
+        val muted = preferences.toFeedbackSettings()
+        assertEquals(0f, muted.effectiveVolume(FeedbackEvent.DICE_ROLL), 0f)
+        assertEquals(0.25f, muted.categoryVolume(FeedbackEvent.DICE_ROLL), 0f)
+
+        preferences.writeFeedbackSettings(restored.copy(soundVolumes = emptyMap()))
+        val reset = preferences.toFeedbackSettings()
+        SoundCatalog.categories.forEach { assertEquals(1f, reset.categoryVolume(it.event), 0f) }
+        assertEquals(restored.masterVolume, reset.masterVolume, 0f)
+        assertEquals(restored.soundSelections, reset.soundSelections)
+    }
+
+    @Test fun invalidCategoryVolumesAreSanitizedOnReadAndWrite() {
+        val cases = listOf(-1f to 0f, 2f to 1f, Float.NaN to 1f, Float.POSITIVE_INFINITY to 1f)
+        cases.forEach { (invalid, expected) ->
+            val preferences = mutablePreferencesOf(floatPreferencesKey("sound_volume_capture") to invalid)
+            assertEquals(expected, preferences.toFeedbackSettings().categoryVolume(FeedbackEvent.CAPTURE), 0f)
+            preferences.writeFeedbackSettings(FeedbackSettings(soundVolumes = mapOf(FeedbackEvent.CAPTURE to invalid)))
+            assertEquals(expected, preferences[floatPreferencesKey("sound_volume_capture")]!!, 0f)
+        }
+    }
+
 }

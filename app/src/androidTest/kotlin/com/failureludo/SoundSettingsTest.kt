@@ -2,6 +2,7 @@ package com.failureludo
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.failureludo.data.FeedbackSettings
@@ -62,4 +63,40 @@ class SoundSettingsTest {
             .performScrollTo().assertIsNotEnabled()
         compose.onAllNodes(isSelectable()).onFirst().assertIsEnabled().assertIsSelected()
     }
+
+    @Test fun categoryVolumeMutesOnlyItsPreviewsAndResetPreservesSoundChoices() {
+        var settings = FeedbackSettings(masterVolume = 0.5f,
+            soundSelections = mapOf(FeedbackEvent.CAPTURE to "snake_capture_hiss"))
+        compose.setContent {
+            var current by remember { mutableStateOf(settings) }
+            MaterialTheme {
+                FeedbackSettingsDialog(current, { settings = it; current = it }, {}, { _, _ -> }, {})
+            }
+        }
+        compose.onNodeWithText("Sound").performScrollTo().performClick()
+        compose.onNodeWithText("Capture").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Capture volume").performScrollTo()
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(0f) }
+        compose.onNodeWithContentDescription("Preview Capture: Snake hiss").performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle {
+            assertEquals(0f, settings.categoryVolume(FeedbackEvent.CAPTURE), 0f)
+            assertEquals(1f, settings.categoryVolume(FeedbackEvent.DICE_ROLL), 0f)
+            assertEquals(0.5f, settings.masterVolume, 0f)
+        }
+        compose.onNodeWithContentDescription("Back to settings").performClick()
+        compose.onNodeWithText("Dice roll").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Preview Dice roll: Wooden tumble").performScrollTo().assertIsEnabled()
+        compose.onNodeWithContentDescription("Back to settings").performClick()
+        compose.onNodeWithText("Capture").performScrollTo().performClick()
+        compose.onNodeWithText("Capture volume: 0%").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Capture volume").performScrollTo().assertIsEnabled()
+        compose.onNodeWithContentDescription("Back to settings").performClick()
+        compose.onNodeWithText("Reset category volumes").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(1f, settings.categoryVolume(FeedbackEvent.CAPTURE), 0f)
+            assertEquals("snake_capture_hiss", settings.soundSelections[FeedbackEvent.CAPTURE])
+            assertEquals(0.5f, settings.masterVolume, 0f)
+        }
+    }
+
 }

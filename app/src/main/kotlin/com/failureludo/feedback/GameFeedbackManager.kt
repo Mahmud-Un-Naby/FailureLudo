@@ -10,13 +10,13 @@ class GameFeedbackManager(context: Context) {
 
     fun emitSound(event: FeedbackEvent, settings: FeedbackSettings) {
         if (!settings.soundEnabled) return
-        audioManager.play(SoundCatalog.resolve(event, settings.soundSelections[event]), settings.masterVolume)
+        audioManager.play(SoundCatalog.resolve(event, settings.soundSelections[event]), settings.effectiveVolume(event))
     }
 
     fun previewSound(event: FeedbackEvent, optionId: String, settings: FeedbackSettings) {
         if (!settings.soundEnabled) return
         audioManager.prepare(settings)
-        audioManager.preview(SoundCatalog.resolve(event, optionId), settings.masterVolume)
+        audioManager.preview(SoundCatalog.resolve(event, optionId), settings.effectiveVolume(event))
     }
 
     fun release() = audioManager.release()

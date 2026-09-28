@@ -54,7 +54,7 @@ internal fun FeedbackSettingsDialog(
     }
     SettingsWindow(
         title = category?.event?.label ?: page.title,
-        subtitle = if (category != null) "Choose a sound, or preview it before deciding." else page.subtitle,
+        subtitle = if (category != null) "Adjust volume, choose a sound and preview it." else page.subtitle,
         pageKey = soundEvent ?: page,
         onBack = goBack,
         onClose = onDismiss
@@ -62,6 +62,22 @@ internal fun FeedbackSettingsDialog(
         if (category != null) {
             if (!settings.soundEnabled || settings.masterVolume <= 0f) {
                 SettingsCard { Text("Previews are muted. Turn on sound and raise the volume on the Sound page.") }
+            }
+            SettingsCard {
+                val savedVolume = settings.categoryVolume(category.event)
+                var volume by remember(category.event, savedVolume) { mutableFloatStateOf(savedVolume) }
+                Text("${category.event.label} volume: ${(volume * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.titleSmall)
+                Slider(value = volume, onValueChange = { volume = it },
+                    onValueChangeFinished = { onSettingsChange(settings.copy(soundVolumes =
+                        settings.soundVolumes + (category.event to volume))) },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.semantics {
+                        contentDescription = "${category.event.label} volume"
+                        stateDescription = "${(volume * 100).roundToInt()}%"
+                    })
+                Text("Master volume also applies. Set to 0% to mute only this category.",
+                    style = MaterialTheme.typography.bodySmall)
             }
             val selected = category.resolve(settings.soundSelections[category.event])
             SettingsCard {
@@ -84,7 +100,7 @@ internal fun FeedbackSettingsDialog(
                             }
                             IconButton(
                                 onClick = { onPreviewSound(category.event, option.id) },
-                                enabled = settings.soundEnabled && settings.masterVolume > 0f
+                                enabled = settings.effectiveVolume(category.event) > 0f
                             ) { Icon(Icons.Default.PlayArrow, "Preview ${category.event.label}: ${option.label}") }
                         }
                     }
@@ -123,19 +139,23 @@ internal fun FeedbackSettingsDialog(
                         enabled = settings.soundEnabled, valueRange = 0f..1f,
                         modifier = Modifier.semantics { contentDescription = "Master volume" })
                     OutlinedButton(onClick = onTestCaptureSound,
-                        enabled = settings.soundEnabled && settings.masterVolume > 0f) {
+                        enabled = settings.effectiveVolume(FeedbackEvent.CAPTURE) > 0f) {
                         Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Test capture sound")
                     }
                 }
-                SettingsHeading("Sound choices")
+                SettingsHeading("Sound categories")
                 SoundCatalog.categories.forEach { sound ->
-                    SettingsDestination(sound.event.label, sound.resolve(settings.soundSelections[sound.event]).label,
+                    SettingsDestination(sound.event.label,
+                        "${(settings.categoryVolume(sound.event) * 100).roundToInt()}% · ${sound.resolve(settings.soundSelections[sound.event]).label}",
                         Icons.Default.MusicNote) { soundEvent = sound.event }
                 }
                 TextButton(onClick = { onSettingsChange(settings.copy(soundSelections = emptyMap())) }) {
                     Text("Reset sound choices")
+                }
+                TextButton(onClick = { onSettingsChange(settings.copy(soundVolumes = emptyMap())) }) {
+                    Text("Reset category volumes")
                 }
             }
             SettingsPage.MOTION -> {

@@ -649,3 +649,19 @@ tiles with an actual board preview and replaces the pale setup background with a
   and play-speed review remain with the user.
 - Normal signed release APK built successfully; release lint and APK signature checks
   passed. Artifact: `app/build/outputs/apk/release/app-release.apk`. Nothing published.
+
+
+## Follow-up — independent sound category volumes
+
+- Settings → Sound → each category now has a saved 0–100% volume slider. Category
+  summaries show the saved percentage; 0% mutes only that category. Master volume
+  scales every category, and gameplay and previews use the same combined level.
+- Existing installations default all eight categories to 100%, preserving prior
+  playback levels and sound choices. Reset category volumes restores those levels
+  while retaining master volume and selected sounds. Sound-choice reset retains volumes.
+- Validation: all 114 app unit tests passed, Android UI tests compiled, and the debug
+  APK built with `:app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:assembleDebug --offline`.
+  Coverage includes independent persistence, defaults, master scaling, mute/reset,
+  invalid stored values, and a compiled UI check for category adjustment and previews.
+  APK: `app/build/outputs/apk/debug/app-debug.apk`. Device UI execution and listening
+  review remain with the user.
