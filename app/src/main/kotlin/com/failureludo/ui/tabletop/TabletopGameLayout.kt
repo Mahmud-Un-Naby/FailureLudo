@@ -122,7 +122,7 @@ private fun CornerPlayer(
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         @Composable fun Die() {
-            Box(Modifier.size(48.dp).background(TabletopStyle.Panel.copy(alpha = .65f), shape)
+            Box(Modifier.size(48.dp).background(TabletopStyle.Panel, shape)
                 .border(1.dp, if (active) tint else TabletopStyle.Muted.copy(alpha = .25f), shape),
                 contentAlignment = Alignment.Center) {
                 if (active) TabletopDice(value, rollId, rolling, reducedMotion, enabled, onRoll,
