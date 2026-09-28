@@ -6,8 +6,9 @@
 - `main` contains the merged offline improvements and is the shared release baseline.
   Continue Android online development on `feat/online-testing`. The former
   `feat/offline-improvements` branch is retired; do not recreate it.
-  Online builds remain for private testing; production publication requires authorization.
-  See [online testing preparation](docs/online-testing.md) for isolation requirements.
+  Online play is part of the intended release app, alongside offline play; develop it
+  as release work. Production publication still requires authorization.
+  See [online release preparation](docs/online-testing.md) for current scope and readiness.
 - Rebuild/polish layout, board, pawns, movement, dice, sound, and supporting screens.
   The playable presentation is under user review; later user feedback supersedes proposals.
 - Preserve rules, bots, saves, undo/redo, history/replay, and reliable pawn selection.
@@ -52,6 +53,9 @@
   production publication requires the user's authorization.
 - Presentation changes/continuing the redesign: relevant sections and latest feedback
   in [plan 010](plans/010-offline-android-fresh-design-plan.md).
+- Server-controlled online release: [plan 011](plans/011-authoritative-online-release-plan.md).
+  Reuse `game-engine` in the Cloud Run JVM backend; clients submit intentions, and
+  the server owns online dice and confirmed state. Deployment still needs authorization.
 - Rules or replay behavior: [rule contract](docs/game-rules-live.md).
 - Significant bot/ML experiments, model changes, or policy evaluation: follow
   [AI logging guidance](docs/ai-work-log/README.md). Routine assistant work is not an AI experiment.

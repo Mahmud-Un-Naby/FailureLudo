@@ -1,6 +1,46 @@
-# Online Android testing preparation
+# Online Android release preparation
 
-## Current branch handoff — 28 September 2026
+## Current release direction — 28 September 2026
+
+The user now wants online development treated as release work, with online and offline
+play in the release app. This supersedes the private-testing-only, offline-only release,
+mandatory separate product-flavor, and disabled-online-release requirements recorded
+below. Continue on `feat/online-testing`; production publication and backend deployment
+still require explicit authorization. Web/parity work remains paused.
+
+Offline startup and play must continue to work without internet, sign-in, or a backend.
+Online guests must be able to create/join rooms without a Google account. The retained
+implementation supports anonymous Firebase authentication through **Play as Guest**;
+automatic guest entry without an authentication screen has not been implemented.
+
+Current compatibility assessment from source inspection:
+- Android and engine source match the merged offline baseline on `main`.
+- Online uses the shared current rules engine and deterministic move application,
+  including stacked-pawn selection and the home-entry choice.
+- Online still renders `LudoBoardCanvas` with its older player rails and dice, while
+  offline uses `TabletopGameLayout` and `TabletopBoard`. Offline movement animation,
+  feedback/settings integration, saves, and history/replay are not wired into online.
+- Online currently creates human-only free-for-all games; offline team/bot setup is
+  not exposed online. Offline undo/redo is not an online multiplayer contract.
+- Navigation is still debug-only. Release inclusion requires implementation, not just
+  this scope change. Shared rules do not establish reliable network play.
+
+The user selected a server-controlled Kotlin engine on Cloud Run, with Firebase guest
+identity and Firestore persistence. Follow [plan 011](../plans/011-authoritative-online-release-plan.md)
+for implementation and validation. Its backend foundation precedes Android migration,
+tabletop integration and release entry. The old client-written relay is being replaced,
+not promoted to release unchanged. See [server setup](../online-server/README.md).
+Keep test and production backend configuration deliberate. Validate release builds,
+offline startup without a connection, guest room entry, and complete two-device games
+before declaring release readiness. Backend unit tests, distribution build, Java 17
+startup smoke checks and Android compilation now pass; emulator/container checks remain
+blocked by runtime download failures. See plan 011 for exact validation and remaining work.
+No device verification or deployment has been performed.
+
+## Historical branch handoff — 28 September 2026
+
+The sections below preserve the earlier preparation decision; conflicting release
+scope and build-isolation requirements are superseded by the current direction above.
 
 The user requested merging the completed offline improvements into `main`, preserving
 this branch's preparation, deleting `feat/offline-improvements` after verifying ancestry,

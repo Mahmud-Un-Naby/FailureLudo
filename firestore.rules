@@ -1,12 +1,20 @@
 rules_version = '2';
 
 // FailureLudo — online multiplayer rules.
-// The game engine is deterministic and runs on every client (moves are synced,
-// not authoritative server state), so these rules enforce *authentication* and
-// basic ownership rather than game correctness. Tighten further once a Cloud
-// Function validates moves server-side.
+// New authoritative collections are server-written and member-readable. The legacy
+// client-written preview collections below remain until Android migration; they
+// are not the authorization model for the server-controlled release.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Server-controlled rooms: members can observe snapshots; only the backend writes.
+    match /authoritativeRooms/{roomCode} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.memberUids;
+      allow write: if false;
+    }
+    match /authoritativeRequests/{requestKey} {
+      allow read, write: if false;
+    }
 
     // Player profiles: anyone signed in can read (to show names/avatars);
     // only the owner may write their own profile.

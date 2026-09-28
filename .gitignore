@@ -42,3 +42,8 @@ keystore.properties
 
 # Private tester feedback and game exports
 /testing-private/
+
+# Local Firebase emulator output
+/firebase-debug.log
+/firestore-debug.log
+/online-server/firebase-debug.log

@@ -1,5 +1,23 @@
 # Plan 007 — Online Multiplayer
 
+## Architecture update — 28 September 2026
+
+[Plan 011](011-authoritative-online-release-plan.md) supersedes the client-authoritative
+move relay below. Online will use the shared Kotlin engine on a Cloud Run backend,
+server-generated dice, transactional commands and confirmed snapshots. This historical
+plan remains context for retained Android UI and known gaps.
+
+## Release scope update — 28 September 2026
+
+Online Android development now targets the release app alongside offline play, per
+the user's latest direction. The debug-only/private-testing limitation below describes
+the current implementation, not the release target. See the
+[current release handoff](../docs/online-testing.md) for compatibility gaps and scope.
+Offline play remains independent of authentication/network access; Google sign-in is
+not required for online guests. Publication and backend deployment still require
+explicit authorization. Web/parity work remains paused. The synchronization,
+authorization, and tabletop integration priorities below remain outstanding.
+
 ## Resumption handoff — 28 September 2026
 
 The user explicitly resumed online Android work, then requested consolidation of the

@@ -15,11 +15,13 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
+        if (!providers.gradleProperty("serverOnly").map(String::toBoolean).getOrElse(false)) google()
         mavenCentral()
     }
 }
 
 rootProject.name = "FailureLudo"
-include(":app")
+// Build the backend without an Android SDK: -PserverOnly=true
+if (!providers.gradleProperty("serverOnly").map(String::toBoolean).getOrElse(false)) include(":app")
 include(":game-engine")
+include(":online-server")
