@@ -13,8 +13,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
-import com.failureludo.R
-import com.failureludo.data.FeedbackSettings
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
 import com.failureludo.viewmodel.GameViewModel
@@ -25,14 +23,20 @@ internal fun HomeSettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val feedback = remember(context) {
-        GameFeedbackManager(context, soundPrefix = "tabletop_",
-            soundOverrides = mapOf(FeedbackEvent.CAPTURE to R.raw.sfx_capture))
+        GameFeedbackManager(context)
     }
+    LaunchedEffect(feedback, settings) { feedback.prepare(settings) }
     DisposableEffect(feedback) { onDispose { feedback.release() } }
-    HomeFeedbackSettingsDialog(settings, viewModel::updateFeedbackSettings, {
-        feedback.emitSound(FeedbackEvent.CAPTURE, settings)
-        if (settings.hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-    }, onDismiss)
+    FeedbackSettingsDialog(
+        settings = settings,
+        onSettingsChange = viewModel::updateFeedbackSettings,
+        onTestCaptureSound = {
+            feedback.emitSound(FeedbackEvent.CAPTURE, settings)
+            if (settings.hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        },
+        onPreviewSound = { event, optionId -> feedback.previewSound(event, optionId, settings) },
+        onDismiss = onDismiss
+    )
 }
 
 @Composable
@@ -61,104 +65,4 @@ internal fun RulesDialog(onDismiss: () -> Unit) {
 private fun RuleSection(title: String, body: String) {
     Text(title, style = MaterialTheme.typography.titleSmall)
     Text(body, style = MaterialTheme.typography.bodyMedium)
-}
-
-@Composable
-private fun HomeFeedbackSettingsDialog(
-    settings: FeedbackSettings,
-    onSettingsChange: (FeedbackSettings) -> Unit,
-    onTestCaptureSound: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        shape = RoundedCornerShape(28.dp),
-        containerColor = Color(0xFFFFF8FC),
-        onDismissRequest = onDismiss,
-        title = { Text("Settings") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Sound effects")
-                    Switch(
-                        checked = settings.soundEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(soundEnabled = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Reduced motion")
-                    Switch(
-                        checked = settings.reducedMotion,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(reducedMotion = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Haptics")
-                    Switch(
-                        checked = settings.hapticsEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(hapticsEnabled = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Auto-select single move", modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = settings.singleMoveAssistEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(singleMoveAssistEnabled = enabled))
-                        }
-                    )
-                }
-
-                Text("Master volume: ${(settings.masterVolume * 100f).toInt()}%")
-                Slider(
-                    value = settings.masterVolume,
-                    onValueChange = { value ->
-                        onSettingsChange(settings.copy(masterVolume = value.coerceIn(0f, 1f)))
-                    },
-                    valueRange = 0f..1f
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    OutlinedButton(
-                        onClick = onTestCaptureSound,
-                        enabled = settings.soundEnabled
-                    ) {
-                        Text("Test capture sound")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done")
-            }
-        }
-    )
 }

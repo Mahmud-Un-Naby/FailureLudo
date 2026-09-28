@@ -14,9 +14,31 @@ Audition on device before selecting the final sonic direction.
 
 ## Capture sound restored in the September 24 refinement
 
-Offline gameplay overrides the procedural `tabletop_capture.wav` with the previous default
-`sfx_capture.ogg` (the user's “faaah” recording), while keeping the remaining tabletop pack.
+Offline gameplay uses the previous default `sfx_capture.ogg` instead of the procedural
+`tabletop_capture.wav` (the user's “faaah” recording), while keeping the remaining tabletop pack.
 The repository retains `fahhh_kcgaxfs.mp3` as well. Commit `2674a77` describes the original
 move/capture sequencing as “tut tut faah”. The clip fires once at contact alongside the new
 impact effect, using existing mute, volume, and fixed-pitch capture settings. Listening review
 is left to the user; the procedural audition asset and generator remain recoverable.
+
+
+## Sound choices and adding options
+
+Settings → Advanced settings contains the per-action sound lists, previews, and reset action.
+These preferences apply to all games, persist on the device, and are independent of new-game
+setup. Home and in-game settings share the same picker. Existing sounds are ordinary options
+in [SoundCatalog.kt](../../app/src/main/kotlin/com/failureludo/feedback/SoundCatalog.kt), marked
+as each category's default. No legacy or audition assets are offered automatically.
+
+To add a sound, bundle its file in `app/src/main/res/raw/` and add a `SoundOption` to the matching
+category's `options` list with a unique, permanent ID, a player-facing label, its `R.raw` reference,
+and suitable gain/pitch settings. Record its source/license here. The picker discovers the entry
+automatically; no gameplay or preference-schema edits are required. Preserve IDs across file
+or label renames. The category's `defaultId` must point to a member of its list. Missing, obsolete,
+or wrong-category saved IDs resolve to that default.
+
+Playback preloads only selected assets and loads other options on preview. Gameplay cues are
+never queued while loading, so a late sample cannot produce an out-of-time action sound.
+Previews wait for loading and respect the sound switch and master volume. Replaced assets are
+unloaded when selections change or another preview is requested; sound pools are released when
+the owning screen closes. Actual listening/device review remains a manual check.

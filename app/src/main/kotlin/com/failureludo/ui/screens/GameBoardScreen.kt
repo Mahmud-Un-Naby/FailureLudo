@@ -42,8 +42,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.failureludo.R
-import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
@@ -124,9 +122,10 @@ fun GameBoardScreen(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val feedbackManager = remember(context) {
-        GameFeedbackManager(context, soundPrefix = "tabletop_",
-            soundOverrides = mapOf(FeedbackEvent.CAPTURE to R.raw.sfx_capture))
+        GameFeedbackManager(context)
     }
+
+    LaunchedEffect(feedbackManager, feedbackSettings) { feedbackManager.prepare(feedbackSettings) }
 
     DisposableEffect(feedbackManager) {
         onDispose {
@@ -419,6 +418,9 @@ fun GameBoardScreen(
                 if (feedbackSettings.hapticsEnabled) {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
+            },
+            onPreviewSound = { event, optionId ->
+                feedbackManager.previewSound(event, optionId, feedbackSettings)
             },
             onDismiss = { showFeedbackDialog = false }
         )
@@ -1165,104 +1167,4 @@ private fun ReplayControlsRow(
             )
         }
     }
-}
-
-@Composable
-private fun FeedbackSettingsDialog(
-    settings: FeedbackSettings,
-    onSettingsChange: (FeedbackSettings) -> Unit,
-    onTestCaptureSound: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        shape = RoundedCornerShape(28.dp),
-        containerColor = Color(0xFFFFF8FC),
-        onDismissRequest = onDismiss,
-        title = { Text("Game Feedback") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Sound effects")
-                    Switch(
-                        checked = settings.soundEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(soundEnabled = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Reduced motion")
-                    Switch(
-                        checked = settings.reducedMotion,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(reducedMotion = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Haptics")
-                    Switch(
-                        checked = settings.hapticsEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(hapticsEnabled = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Auto-select single move")
-                    Switch(
-                        checked = settings.singleMoveAssistEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(singleMoveAssistEnabled = enabled))
-                        }
-                    )
-                }
-
-                Text("Master volume: ${(settings.masterVolume * 100f).toInt()}%")
-                Slider(
-                    value = settings.masterVolume,
-                    onValueChange = { value ->
-                        onSettingsChange(settings.copy(masterVolume = value.coerceIn(0f, 1f)))
-                    },
-                    valueRange = 0f..1f
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    OutlinedButton(
-                        onClick = onTestCaptureSound,
-                        enabled = settings.soundEnabled
-                    ) {
-                        Text("Test capture sound")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done")
-            }
-        }
-    )
 }

@@ -2,6 +2,10 @@ package com.failureludo.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.failureludo.feedback.FeedbackEvent
+import com.failureludo.feedback.SoundCatalog
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -15,7 +19,8 @@ data class FeedbackSettings(
     val hapticsEnabled: Boolean = true,
     val masterVolume: Float = 0.8f,
     val singleMoveAssistEnabled: Boolean = false,
-    val reducedMotion: Boolean = false
+    val reducedMotion: Boolean = false,
+    val soundSelections: Map<FeedbackEvent, String> = emptyMap()
 )
 
 private val Context.feedbackPreferencesDataStore by preferencesDataStore(name = "feedback_preferences")
@@ -36,6 +41,7 @@ class GamePreferencesStore(private val context: Context) {
 
     suspend fun updateFeedbackSettings(settings: FeedbackSettings) {
         context.feedbackPreferencesDataStore.edit { prefs ->
+            prefs.writeSoundSelections(settings.soundSelections)
             prefs[Keys.REDUCED_MOTION] = settings.reducedMotion
             prefs[Keys.SOUND_ENABLED] = settings.soundEnabled
             prefs[Keys.MUSIC_ENABLED] = settings.musicEnabled
@@ -47,6 +53,7 @@ class GamePreferencesStore(private val context: Context) {
 
     private fun Preferences.toFeedbackSettings(): FeedbackSettings {
         return FeedbackSettings(
+            soundSelections = readSoundSelections(),
             reducedMotion = this[Keys.REDUCED_MOTION] ?: false,
             soundEnabled = this[Keys.SOUND_ENABLED] ?: true,
             musicEnabled = this[Keys.MUSIC_ENABLED] ?: false,
@@ -56,3 +63,18 @@ class GamePreferencesStore(private val context: Context) {
         )
     }
 }
+
+// Store stable option IDs, never Android resource IDs or enum ordinals.
+internal fun Preferences.readSoundSelections(): Map<FeedbackEvent, String> =
+    SoundCatalog.categories.associate { category ->
+        category.event to category.resolve(this[soundSelectionKey(category.event)]).id
+    }
+
+internal fun MutablePreferences.writeSoundSelections(selections: Map<FeedbackEvent, String>) {
+    SoundCatalog.categories.forEach { category ->
+        this[soundSelectionKey(category.event)] = category.resolve(selections[category.event]).id
+    }
+}
+
+private fun soundSelectionKey(event: FeedbackEvent) =
+    stringPreferencesKey("sound_selection_${event.settingsId}")

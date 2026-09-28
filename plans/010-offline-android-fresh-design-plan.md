@@ -496,3 +496,21 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
   the existing full reason available to screen readers. Move rules are unchanged.
 - Validation: Android compilation and debug APK build passed. Device visual and
   accessibility review remain pending.
+
+
+## September 28 follow-up — advanced sound choices
+
+- Home and in-game Settings now share an Advanced settings page with per-category lists,
+  previews, and reset. Choices persist independently of new-game setup and apply to all games.
+- Each current sound is an ordinary catalog option marked as the category default; playback
+  keeps the same resources, gain, pitch variation, and gameplay event timing. No audio assets
+  were replaced or added, and unused audition assets remain recoverable.
+- Stable sound/category IDs are stored in the existing local preferences. Missing, obsolete,
+  or wrong-category selections fall back to the category default. Playback preloads selected
+  assets and loads preview options on demand rather than preloading the whole future catalog.
+- Adding options requires a bundled resource and catalog entry; the picker and persistence
+  discover entries automatically. See [sound extension guidance](../design/audio/README.md).
+- Validation: all 84 app unit tests passed; debug APK build and UI-test compilation passed via
+  `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline --console=plain`.
+  Device execution and listening review remain with the user. Review Settings → Advanced
+  settings from home and gameplay, previews with mute/volume, reset, and persistence after restart.
