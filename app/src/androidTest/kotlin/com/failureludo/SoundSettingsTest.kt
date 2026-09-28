@@ -14,7 +14,7 @@ import org.junit.Test
 class SoundSettingsTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun advancedChoicesCanBeOpenedAndPreviewedWithoutCreatingAGame() {
+    @Test fun soundChoicesCanBeOpenedAndPreviewedWithoutCreatingAGame() {
         var preview: Pair<FeedbackEvent, String>? = null
         compose.setContent {
             var settings by remember { mutableStateOf(FeedbackSettings()) }
@@ -23,12 +23,13 @@ class SoundSettingsTest {
                     { event, id -> preview = event to id }, {})
             }
         }
-        compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
+        compose.onNodeWithText("Sound").performScrollTo().performClick()
+        compose.onNodeWithText("Capture").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Preview Capture: faaah")
             .performScrollTo().performClick()
         compose.runOnIdle { assertEquals(FeedbackEvent.CAPTURE to "original_capture", preview) }
+        compose.onNodeWithContentDescription("Back to settings").performClick()
         compose.onNodeWithText("Reset sound choices").performScrollTo().performClick()
-        compose.onNodeWithText("Back to settings").performClick()
         compose.onNodeWithText("Sound effects").performScrollTo().assertIsDisplayed()
     }
 
@@ -40,11 +41,12 @@ class SoundSettingsTest {
                 FeedbackSettingsDialog(current, { settings = it; current = it }, {}, { _, _ -> }, {})
             }
         }
-        compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
+        compose.onNodeWithText("Sound").performScrollTo().performClick()
+        compose.onNodeWithText("Dice roll").performScrollTo().performClick()
         compose.onNodeWithText("Light wooden roll").performScrollTo().performClick()
         compose.onNodeWithText("Light wooden roll").assertIsSelected()
         compose.runOnIdle { assertEquals("wooden_dice_light", settings.soundSelections[FeedbackEvent.DICE_ROLL]) }
-        compose.onNodeWithText("Reset sound choices").performScrollTo().performClick()
+        compose.onNodeWithText("Use default sound").performScrollTo().performClick()
         compose.onNodeWithText("Wooden tumble").performScrollTo().assertIsSelected()
     }
 
@@ -54,7 +56,8 @@ class SoundSettingsTest {
                 FeedbackSettingsDialog(FeedbackSettings(soundEnabled = false), {}, {}, { _, _ -> }, {})
             }
         }
-        compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
+        compose.onNodeWithText("Sound").performScrollTo().performClick()
+        compose.onNodeWithText("Dice roll").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Preview Dice roll: Wooden tumble")
             .performScrollTo().assertIsNotEnabled()
         compose.onAllNodes(isSelectable()).onFirst().assertIsEnabled().assertIsSelected()

@@ -17,25 +17,33 @@ class OfflineTabletopTest {
             compose.onAllNodesWithText("New game").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("New game").performScrollTo().performClick()
-        compose.onNodeWithText("More options").performScrollTo().performClick()
-        compose.onNodeWithText("Single").performClick()
-        val seats = listOf("Top left", "Top right", "Bottom left", "Bottom right")
-        val selectedBefore = seats.map { label ->
-            compose.onNode(hasText(label) and isSelectable()).fetchSemanticsNode()
-                .config[androidx.compose.ui.semantics.SemanticsProperties.Selected]
-        }
+        compose.onNodeWithText("Settings").performScrollTo().performClick()
+        compose.onNodeWithText("Players & teams").performScrollTo().performClick()
         compose.onNodeWithText("Team").performClick()
         compose.onAllNodesWithText("Team 1").assertCountEquals(2)
         compose.onAllNodesWithText("Team 2").assertCountEquals(2)
         compose.onNodeWithText("Single").performClick()
-        seats.zip(selectedBefore).forEach { (label, selected) ->
-            val node = compose.onNode(hasText(label) and isSelectable())
-            if (selected) node.assertIsSelected() else node.assertIsNotSelected()
-        }
-        compose.onNodeWithText("Colors").performScrollTo().performClick()
-        compose.onNodeWithText("Reset").performScrollTo().performClick()
-        compose.onAllNodes(hasContentDescription(", Red", substring = true) and isSelected())
-            .assertCountEquals(if (selectedBefore[0]) 1 else 0)
+        compose.onNodeWithContentDescription("Back to settings").performClick()
+        compose.onNodeWithText("Seats & colors").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Top left, playing").assertExists()
+        compose.onNodeWithContentDescription("Bottom right, playing").assertExists()
+        compose.onNodeWithContentDescription("Top right, empty").assertExists()
+        compose.onNodeWithContentDescription("Bottom left, empty").assertExists()
+        compose.onNodeWithText("Reset all colors").performScrollTo().performClick()
+        compose.onNode(hasContentDescription(", Red", substring = true) and isSelected()).assertExists()
+        compose.onNodeWithContentDescription("Player-1, Blue").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Player-1, Blue").assertIsSelected()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithText("Your game").assertExists()
+        compose.onNodeWithContentDescription("Board preview with 2 players").assertExists()
+        // Reopening settings must keep the custom draft, including its seat selection.
+        compose.onNodeWithText("Settings").performScrollTo().performClick()
+        compose.onNodeWithText("Seats & colors").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Top right, empty").assertExists()
+        compose.onNodeWithContentDescription("Player-1, Blue").performScrollTo().assertIsSelected()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithText("Quick setup").performClick()
+        compose.onNodeWithText("2 players").assertIsSelected()
     }
 
     @Test fun localGameOpensAndRollSettlesWithoutAuthentication() {
@@ -69,7 +77,10 @@ class OfflineTabletopTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithContentDescription("Ludo board.", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Motion").performScrollTo().performClick()
         compose.onNodeWithText("Reduced motion").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithText("Play assistance").assertExists()
         pressBack()
         compose.onNodeWithText("Game Feedback").assertDoesNotExist()
         compose.onNodeWithText("Quit Game?").assertDoesNotExist()

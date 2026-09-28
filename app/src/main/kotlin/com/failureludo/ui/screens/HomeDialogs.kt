@@ -16,9 +16,15 @@ import androidx.compose.ui.unit.dp
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
 import com.failureludo.viewmodel.GameViewModel
+import com.failureludo.viewmodel.SetupState
 
 @Composable
-internal fun HomeSettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit) {
+internal fun HomeSettingsDialog(
+    viewModel: GameViewModel,
+    gameSetup: SetupState? = null,
+    onGameSetupChange: (SetupState) -> Unit = {},
+    onDismiss: () -> Unit
+) {
     val settings by viewModel.feedbackSettings.collectAsState()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -35,7 +41,9 @@ internal fun HomeSettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
             if (settings.hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         },
         onPreviewSound = { event, optionId -> feedback.previewSound(event, optionId, settings) },
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        gameSetup = gameSetup,
+        onGameSetupChange = onGameSetupChange
     )
 }
 

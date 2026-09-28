@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val navController = rememberNavController()
             val entry by navController.currentBackStackEntryAsState()
-            val isTabletop = entry == null || entry?.destination?.route in setOf(Screen.Home.route, Screen.Game.route)
+            val isTabletop = entry == null || entry?.destination?.route in setOf(Screen.Home.route, Screen.Setup.route, Screen.Game.route)
             FailureLudoTheme(forceLightSystemBarIcons = isTabletop) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     AppNavigation(navController = navController)

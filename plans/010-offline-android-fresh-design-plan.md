@@ -601,3 +601,38 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
   lint and upload-key validation passed. APK signature and non-debuggable manifest
   verified. Artifact: `app/build/outputs/apk/release/app-release.apk`. Nothing published;
   app version remains 1.0.9 / code 13, so a new Play upload still needs version review.
+
+
+## September 28 follow-up — settings pages and board preview
+
+Plan, requested and implemented: keep quick creation focused on opponent type and player
+count; move custom game choices into a shared settings hub; split preferences into focused
+pages with summaries and sound previews. Subsequent user feedback replaces symbolic seating
+tiles with an actual board preview and replaces the pale setup background with artwork.
+
+- New game → Settings exposes **This game**: Players & teams (names, Person/Computer,
+  Single/Team), and Seats & colors (2–4 seats, one player's palette at a time, color swaps,
+  reset). Custom edits update the creation summary; opening settings alone leaves the quick
+  preset intact. Closing/reopening preserves the draft. Quick setup returns to the chosen
+  fresh preset. Team mode preserves Single seat selections, as before.
+- **All games** appears from setup, home and gameplay: Sound, Motion, Play assistance.
+  Sound has master volume, one picker per event, individual previews/default restoration,
+  and a global sound-choice reset. Muted/zero-volume previews are disabled. Motion keeps
+  independent forward/return speeds, reduced motion and reset. Assistance contains haptics
+  and automatic single-move selection. Existing preference storage and playback are retained.
+- The shared settings window has a bounded tablet width, scrolling pages, retained page
+  scroll state, system/toolbar back navigation to the parent, close/done actions, keyboard
+  insets and accessible full-row toggles. Controls save through the existing stores.
+- Setup and settings use a bundled [illustrated walnut and plum-felt background](../design/settings/README.md),
+  opaque dark control surfaces and gold selection emphasis. Status/navigation icon contrast
+  follows the dark surfaces. Artwork details and the exact generation prompt are recorded.
+- Preview reuses `TabletopBoard` with the current palette and four home pawns per active seat.
+  Empty corners have dark panels and explicit labels; the preview does not rely on identity
+  symbols or faint grey on white. Names/opponent/team labels sit below the board. Preview
+  does not animate or handle pawn input. Gameplay board rendering and rules are unchanged.
+- Validation: all 111 app unit tests passed; debug APK build and Android UI-test compilation
+  passed with `:app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline`.
+  APK: `app/build/outputs/apk/debug/app-debug.apk`. Existing UI checks follow the new pages
+  and cover custom draft reopening, selected colors, teams, sound
+  selection/defaults/mute, speed independence and back navigation. Device execution, visual
+  review at large text/landscape, and listening review remain with the user.

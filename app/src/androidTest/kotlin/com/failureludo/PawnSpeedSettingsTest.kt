@@ -22,6 +22,7 @@ class PawnSpeedSettingsTest {
                 FeedbackSettingsDialog(current, { settings = it; current = it }, {}, { _, _ -> }, {})
             }
         }
+        compose.onNodeWithText("Motion").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Forward speed").performScrollTo()
             .performSemanticsAction(SemanticsActions.SetProgress) { it(2.5f) }
         compose.runOnIdle {
@@ -50,6 +51,7 @@ class PawnSpeedSettingsTest {
                     forwardPawnSpeed = 2f, backwardPawnSpeed = 3f), {}, {}, { _, _ -> }, {})
             }
         }
+        compose.onNodeWithText("Motion").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Forward speed").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Forward speed: 2×").assertExists()
         compose.onNodeWithContentDescription("Backward speed").performScrollTo().assertIsNotEnabled()
