@@ -281,7 +281,7 @@ internal fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: 
     drawIdentity(p+Offset(0f,r*.29f), r*.17f, Color.White.copy(alpha=.9f), identity)
 }
 
-/** Expanding echo rings and a short starburst stay local to the collision cell. */
+/** Echo rings and a skull share the existing collision clock and reduced-motion gate. */
 private fun DrawScope.drawCaptureImpact(at: Offset, cell: Float, progress: Float) {
     repeat(2) { echo ->
         val t = ((progress - echo * .16f) / (1f - echo * .16f)).coerceIn(0f, 1f)
@@ -298,4 +298,5 @@ private fun DrawScope.drawCaptureImpact(at: Offset, cell: Float, progress: Float
             at + direction * cell * (.55f + progress * .9f),
             cell * .07f * (1f - progress), StrokeCap.Round)
     }
+    drawCaptureSkull(at, cell, progress)
 }

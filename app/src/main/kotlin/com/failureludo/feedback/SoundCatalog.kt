@@ -53,7 +53,8 @@ object SoundCatalog {
         )),
         SoundCategory(FeedbackEvent.CAPTURE, "original_capture", listOf(
             SoundOption("original_capture", "faaah", R.raw.sfx_capture, 1.20f),
-            SoundOption("wooden_capture_knock", "Wooden double knock", R.raw.wooden_capture_knock, 0.85f)
+            SoundOption("wooden_capture_knock", "Wooden double knock", R.raw.wooden_capture_knock, 0.85f),
+            SoundOption("snake_capture_hiss", "Snake hiss", R.raw.snake_capture_hiss, 0.95f)
         )),
         SoundCategory(FeedbackEvent.PIECE_FINISH, "tabletop_piece_finish", listOf(
             SoundOption("tabletop_piece_finish", "Tabletop", R.raw.tabletop_piece_finish, 0.24f)

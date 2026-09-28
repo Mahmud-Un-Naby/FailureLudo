@@ -48,6 +48,13 @@ class SoundPreferencesTest {
         assertEquals("original_capture", preferences.readSoundSelections()[FeedbackEvent.CAPTURE])
     }
 
+    @Test fun snakeCaptureChoicePersistsAndDoesNotChangeOtherCategories() {
+        val preferences = mutablePreferencesOf()
+        val selected = defaults + (FeedbackEvent.CAPTURE to "snake_capture_hiss")
+        preferences.writeSoundSelections(selected)
+        assertEquals(selected, preferences.readSoundSelections())
+    }
+
     @Test fun savedOriginalDiceChoiceSurvivesTheNewDefault() {
         val preferences = mutablePreferencesOf(
             stringPreferencesKey("sound_selection_dice_roll") to "tabletop_dice_roll"

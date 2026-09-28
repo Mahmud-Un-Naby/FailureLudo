@@ -38,6 +38,16 @@ class SoundCatalogTest {
             SoundCatalog.resolve(FeedbackEvent.CAPTURE, "wooden_capture_knock").resourceId)
     }
 
+    @Test fun snakeHissIsSelectableWithoutReplacingFaaah() {
+        val snake = SoundCatalog.resolve(FeedbackEvent.CAPTURE, "snake_capture_hiss")
+        assertEquals(R.raw.snake_capture_hiss, snake.resourceId)
+        assertEquals("Snake hiss", snake.label)
+        val default = SoundCatalog.resolve(FeedbackEvent.CAPTURE, null)
+        assertEquals("original_capture", default.id)
+        assertEquals("faaah", default.label)
+        assertEquals(R.raw.sfx_capture, default.resourceId)
+    }
+
     @Test fun selectionUsesStableIdsInsteadOfListOrderAndAllowsAdditionalOptions() {
         val original = SoundCatalog.categories.first()
         val current = original.resolve(null)

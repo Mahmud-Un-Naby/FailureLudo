@@ -531,3 +531,19 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
 - Validation: all 87 app unit tests passed; debug APK build and UI-test compilation passed.
   WAV checks passed for mono 22,050 Hz / 16-bit PCM, duration, endpoint fades, and peak headroom.
   Device UI execution and subjective phone/headphone listening are still for user review.
+
+
+## September 28 follow-up — snake hiss and capture skull
+
+- Added Snake hiss as an optional capture sound in Advanced settings. The default remains faaah;
+  existing saved selections are preserved. The 600 ms cue is prepared from Reitanna's CC0 hiss
+  preview; source, license, exact download URL, hash, and preparation script are retained in
+  [audio documentation](../design/audio/README.md).
+- A native Canvas skull with crossbones pops up, rises, and fades over the collision square on
+  the existing 440 ms capture-effect clock. It shares capture impact timing with the selected
+  sound and echo rings, is disabled by reduced motion, and does not participate in pawn taps.
+  Capture rules, return paths, animation cancellation, and input gating are unchanged.
+- Validation: all 89 app unit tests (including capture sequencing, saved sound choices, and
+  defaults) passed; debug APK build passed. Hiss WAV format, duration, fades, and headroom checked.
+  Device visual/listening checks remain with the user: select Snake hiss, capture a pawn or pair,
+  and review the skull timing plus muted/reduced-motion behavior.

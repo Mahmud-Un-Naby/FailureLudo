@@ -74,3 +74,18 @@ Wooden tumble is used for new/default preferences and after Reset sound choices.
 saved original dice selection stays selected; choose Wooden tumble or reset in Advanced settings
 to switch it. Original tabletop dice remains a list option with the same stable ID. The pawn
 and capture defaults are unchanged; their wooden alternatives are optional.
+
+
+## Snake capture option — September 28
+
+“Snake hiss” is an optional capture sound; “faaah” remains the default. It uses Reitanna's
+[“hiss2.wav”](https://freesound.org/people/Reitanna/sounds/343927/), listed as CC0 1.0 on the
+source page (verified 2026-09-28). This is a hiss effect tagged for snakes/cats, not a verified
+wildlife recording. We acquired the publicly playable high-quality MP3 preview, not the
+login-required original WAV. The retained preview, exact download URL, license, hash, and
+processing details are in [the source manifest](sources/snake_hiss/manifest.json).
+
+[prepare_snake_hiss.py](prepare_snake_hiss.py) trims the preview, filters low rumble and high
+hiss harshness, fades both ends, and normalizes with headroom. The bundled file is 600 ms,
+mono 22,050 Hz 16-bit PCM. It plays through the same capture event, mute, volume, and option
+selection as the other sounds. Device listening remains pending.
