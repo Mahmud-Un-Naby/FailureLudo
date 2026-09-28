@@ -151,7 +151,7 @@ fun GameBoardScreen(
     var pendingStackChoice by remember { mutableStateOf<StackMoveChoiceState?>(null) }
 
     val animationFromCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
-    val movementProgress = remember { Animatable(1f) }
+    var movementProgress by remember { mutableFloatStateOf(1f) }
     val captureProgress = remember { Animatable(1f) }
     var captureCells by remember { mutableStateOf<List<Pair<Int, Int>>>(emptyList()) }
     var previousEventSize by remember { mutableIntStateOf(gameState.eventLog.size) }
@@ -215,37 +215,43 @@ fun GameBoardScreen(
                 try {
                     coroutineScope {
                         animatedPieceCells.clear()
-                        val maxSteps = precomputedAnimationPaths.maxOf { (_, cells) -> cells.size }
-                        for (stepIndex in 0 until maxSteps) {
-                            animationFromCells.clear()
+                        val lastStep = precomputedAnimationPaths.maxOf { (_, cells) -> cells.lastIndex }
+                        val forwardLastStep = (movingPieceStepCount - 1).coerceAtLeast(0)
+                        fun renderFrame(step: Int, progress: Float) {
                             precomputedAnimationPaths.forEach { (key, cells) ->
-                                animationFromCells[key] = cells.getOrNull((stepIndex - 1).coerceAtLeast(0)) ?: cells.last()
-                                animatedPieceCells[key] = cells.getOrNull(stepIndex) ?: cells.last()
+                                animationFromCells[key] = cells.getOrElse((step - 1).coerceAtLeast(0)) { cells.last() }
+                                animatedPieceCells[key] = cells.getOrElse(step) { cells.last() }
                             }
-                            if (stepIndex > 0) {
-                                movementProgress.snapTo(0f)
-                                movementProgress.animateTo(1f, tween(
-                                    durationMillis = pawnTiming.stepDurationMillis(
-                                        precomputedAnimationPlan, stepIndex, latestFeedbackSettings.reducedMotion),
-                                    easing = LinearEasing))
+                            movementProgress = progress
+                        }
+                        suspend fun animatePath(first: Int, last: Int, onLanding: (Int) -> Unit = {}) {
+                            animatePawnPath(
+                                firstStep = first, lastStep = last,
+                                stepDurationMillis = pawnTiming.stepDurationMillis(precomputedAnimationPlan, first, false),
+                                reducedMotion = latestFeedbackSettings.reducedMotion,
+                                onFrame = { renderFrame(it.stepIndex, it.progress) },
+                                onLanding = onLanding
+                            )
+                        }
+                        renderFrame(0, 1f)
+                        animatePath(1, forwardLastStep) { step ->
+                            val landingCapture = hasCaptureDuringAnimation && step == forwardLastStep
+                            feedbackManager.emitSound(
+                                if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
+                                latestFeedbackSettings)
+                        }
+                        if (hasCaptureDuringAnimation && forwardLastStep > 0) {
+                            if (latestFeedbackSettings.hapticsEnabled) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
-                            if (stepIndex in 1 until movingPieceStepCount) {
-                                val landingCapture = hasCaptureDuringAnimation && stepIndex == movingPieceStepCount - 1
-                                feedbackManager.emitSound(if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
-                                    latestFeedbackSettings)
-                                if (landingCapture) {
-                                    if (latestFeedbackSettings.hapticsEnabled) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-                                    if (!latestFeedbackSettings.reducedMotion) {
-                                        captureCells = precomputedAnimationPlan.capturedKeys.mapNotNull { animatedPieceCells[it] }
-                                        captureProgress.snapTo(0f)
-                                        launch { captureProgress.animateTo(1f, tween(CAPTURE_EFFECT_MS, easing = LinearEasing)) }
-                                        kotlinx.coroutines.delay(CAPTURE_HOLD_MS.toLong())
-                                    }
-                                }
+                            if (!latestFeedbackSettings.reducedMotion) {
+                                captureCells = precomputedAnimationPlan.capturedKeys.mapNotNull { animatedPieceCells[it] }
+                                captureProgress.snapTo(0f)
+                                launch { captureProgress.animateTo(1f, tween(CAPTURE_EFFECT_MS, easing = LinearEasing)) }
+                                kotlinx.coroutines.delay(CAPTURE_HOLD_MS.toLong())
                             }
                         }
+                        animatePath(forwardLastStep + 1, lastStep)
                     }
                     kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 1 else 90)
                 } finally {
@@ -618,7 +624,7 @@ fun GameBoardScreen(
                         pieces=gameState.players.filter { it.isActive }.associate { it.color to it.pieces },
                         movable=movableSet, palette=setup.playerColors,
                         animatedCells=renderedAnimatedCells, fromCells=animationFromCells,
-                        progress=movementProgress.value, reducedMotion=feedbackSettings.reducedMotion,
+                        progress=movementProgress, reducedMotion=feedbackSettings.reducedMotion,
                         capturedKeys=precomputedAnimationPlan.capturedKeys,
                         captureCells=captureCells, captureProgress=captureProgress.value,
                         onTap={ tapped ->

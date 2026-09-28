@@ -26,18 +26,18 @@ class PawnSpeedSettingsTest {
             .performSemanticsAction(SemanticsActions.SetProgress) { it(2.5f) }
         compose.runOnIdle {
             assertEquals(2.5f, settings.forwardPawnSpeed)
-            assertEquals(1f, settings.backwardPawnSpeed)
+            assertEquals(2f, settings.backwardPawnSpeed)
         }
         compose.onNodeWithContentDescription("Backward speed").performScrollTo()
-            .performSemanticsAction(SemanticsActions.SetProgress) { it(0.5f) }
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
         compose.runOnIdle {
             assertEquals(2.5f, settings.forwardPawnSpeed)
-            assertEquals(0.5f, settings.backwardPawnSpeed)
+            assertEquals(1f, settings.backwardPawnSpeed)
         }
         compose.onNodeWithText("Reset pawn speeds").performScrollTo().performClick()
         compose.runOnIdle {
-            assertEquals(1f, settings.forwardPawnSpeed)
-            assertEquals(1f, settings.backwardPawnSpeed)
+            assertEquals(2f, settings.forwardPawnSpeed)
+            assertEquals(2f, settings.backwardPawnSpeed)
             assertFalse(settings.soundEnabled)
             assertEquals(0.25f, settings.masterVolume)
         }

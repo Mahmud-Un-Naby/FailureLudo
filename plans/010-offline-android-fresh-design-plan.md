@@ -574,3 +574,30 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
   restart to check persistence, try long captures and pairs at both extremes, review
   bot/replay sequencing and sound, then reset. Collect forward/backward values separately
   with tester feedback before choosing new defaults.
+
+
+## Follow-up — slow pawn movement at default and maximum speed
+
+- User reports that both the default and maximum slider settings feel slower than the
+  previous game. Phone lag has not been reproduced locally; changing defaults alone
+  is not treated as proof of a fix. The earlier supplied APK was a debug build, which
+  also makes comparisons with an optimized published release inconclusive.
+- Replaced the per-square snap/animate loop with one continuous clock for forward
+  travel and one for capture return. Cell and hop progress derive from the phase's
+  position, so missed frames catch up instead of accumulating waits at every square.
+  Captures still wait for attacker contact and the impact hold; cleanup, turn gating,
+  replay completion, and rules remain in their existing paths.
+- Both default multipliers are now 2×. The sliders span 1×–6× in 0.5× increments;
+  they no longer offer speeds below the original timing. Existing valid saved values
+  survive; old values below 1× clamp to 1×. Use Reset pawn speeds to adopt 2× on an
+  installation with saved preferences. Reduced motion completes each whole phase
+  with minimal animation rather than waiting a frame for every cell.
+- Validation: 111 app unit tests passed; debug APK build and UI-test compilation
+  passed. Tests run the actual animation function with deterministic 16, 33, and
+  80 ms frame clocks, verify long-path completion and contact boundaries, and compare
+  2×/6× to the previous per-cell runner. These are timing regressions, not device FPS
+  measurements. Device UI execution and performance review remain with the user.
+- Normal optimized release APK built with `:app:assembleRelease --offline`; release
+  lint and upload-key validation passed. APK signature and non-debuggable manifest
+  verified. Artifact: `app/build/outputs/apk/release/app-release.apk`. Nothing published;
+  app version remains 1.0.9 / code 13, so a new Play upload still needs version review.

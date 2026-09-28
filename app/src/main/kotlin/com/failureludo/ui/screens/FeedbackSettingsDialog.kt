@@ -45,7 +45,7 @@ internal fun FeedbackSettingsDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Pawn speed", style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.semantics { heading() })
-                Text("Saved for all games. Changes apply from the next move. Higher values are faster.")
+                Text("Saved for all games. Changes apply from the next move. Higher values are faster. Default: 2×.")
                 PawnSpeedSlider(
                     label = "Forward speed",
                     speed = settings.forwardPawnSpeed,
@@ -181,8 +181,8 @@ private fun PawnSpeedSlider(label: String, speed: Float, enabled: Boolean, onSpe
             }
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("0.5× · Slower", style = MaterialTheme.typography.labelSmall)
-            Text("4× · Faster", style = MaterialTheme.typography.labelSmall)
+            Text("1× · Original", style = MaterialTheme.typography.labelSmall)
+            Text("6× · Fastest", style = MaterialTheme.typography.labelSmall)
         }
     }
 }

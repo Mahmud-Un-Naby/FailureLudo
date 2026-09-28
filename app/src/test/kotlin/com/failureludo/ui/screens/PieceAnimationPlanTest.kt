@@ -48,9 +48,9 @@ class PieceAnimationPlanTest {
                 BoardCoordinates.MAIN_TRACK[(color.entryPosition + it) % 52]
             } + listOf(BoardCoordinates.HOME_YARD_SPOTS.getValue(color)[2])
             assertEquals(expectedReturn, path.drop(2))
-            val timing = PawnAnimationTiming(FeedbackSettings(forwardPawnSpeed = 2f, backwardPawnSpeed = 0.5f))
+            val timing = PawnAnimationTiming(FeedbackSettings(forwardPawnSpeed = 2f, backwardPawnSpeed = 1f))
             path.indices.drop(1).forEach { step ->
-                assertEquals(if (step < 3) 65 else 70, timing.stepDurationMillis(plan, step, false))
+                assertEquals(if (step < 3) 65 else 35, timing.stepDurationMillis(plan, step, false))
             }
         }
     }
