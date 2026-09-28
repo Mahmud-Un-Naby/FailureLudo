@@ -1,5 +1,6 @@
 package com.failureludo.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -54,9 +55,7 @@ fun OnlineGameBoardScreen(
 
     LaunchedEffect(roomId) { viewModel.initGame(roomId) }
 
-    LaunchedEffect(uiState.gameState?.isGameOver) {
-        if (uiState.gameState?.isGameOver == true) onGameOver()
-    }
+    BackHandler { showQuitDialog = true }
 
     LaunchedEffect(Unit) {
         viewModel.errors.collectLatest { snackbarHostState.showSnackbar(it) }
@@ -193,11 +192,22 @@ fun OnlineGameBoardScreen(
         )
     }
 
-    if (showQuitDialog) {
+    val finishedGame = uiState.gameState?.takeIf { it.isGameOver }
+    if (finishedGame != null) {
+        val winners = finishedGame.players.filter { it.id in finishedGame.winners.orEmpty() }
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Game over") },
+            text = { Text("${winners.joinToString(" & ") { it.name }} wins!") },
+            confirmButton = {
+                TextButton(onClick = onGameOver) { Text("Back to lobby") }
+            }
+        )
+    } else if (showQuitDialog) {
         AlertDialog(
             onDismissRequest = { showQuitDialog = false },
             title = { Text("Leave game?") },
-            text  = { Text("Your opponent will continue without you.") },
+            text  = { Text("Leaving does not end the game. Other players may be left waiting for your turn.") },
             confirmButton = {
                 TextButton(onClick = { showQuitDialog = false; onQuit() }) {
                     Text("Leave", color = MaterialTheme.colorScheme.error)

@@ -1,5 +1,36 @@
 # Plan 007 — Online Multiplayer
 
+## Resumption handoff — 28 September 2026
+
+The user explicitly resumed online Android work. Stay on `feat/offline-improvements`;
+local startup, saves, and offline play remain available without authentication.
+The historical checkboxes below predate retained implementation and are not a current audit.
+
+First increment: expose **Play online · Preview** in debug builds only, with optional
+Google/guest authentication, create/join private rooms, waiting room, and the retained
+online board. Firebase-backed ViewModels are destination-scoped. Online results use
+online game state rather than the offline session's win screen. System back follows
+room-leave/game-exit handling. Release navigation remains offline while the backend
+and synchronization are prepared for real use.
+
+Validation: `./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` passed.
+Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Two-device play, Firebase
+provider configuration, deployed rules, and visual review still need verification.
+
+Next implementation priorities before enabling online releases:
+- Replace unrestricted authenticated room/move writes in `firestore.rules` with
+  membership/host/turn ownership checks and emulator regression coverage.
+- Fix optimistic move submission: failed writes currently advance local state without
+  recovery; add ordered, idempotent confirmation/retry and reconnect handling.
+- Validate joins/starts against fresh transactional room state and player counts.
+- Handle room/move listener errors explicitly and provide recovery instead of stalled play.
+- Define resignation/disconnect behavior; leaving an active game currently does not
+  resolve its outstanding turns. Waiting-room leave remains best-effort.
+- Carry the reviewed tabletop presentation into the online board.
+
+Public matchmaking and web changes are outside this first Android increment. No Firebase
+rules, hosting, or production release are deployed by restoring this development entry point.
+
 ## Decisions (do not re-debate these)
 - **Backend:** Firebase (managed, no server to maintain)
 - **Web frontend:** React, hosted on Firebase Hosting

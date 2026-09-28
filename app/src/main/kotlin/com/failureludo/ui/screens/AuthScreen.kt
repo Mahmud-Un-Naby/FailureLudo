@@ -18,7 +18,7 @@ import com.failureludo.viewmodel.AuthViewModel
 import kotlinx.coroutines.flow.collectLatest
 
 @Composable
-fun AuthScreen(viewModel: AuthViewModel) {
+fun AuthScreen(viewModel: AuthViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val authState by viewModel.authState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -114,11 +114,12 @@ fun AuthScreen(viewModel: AuthViewModel) {
                 }
 
                 Text(
-                    text = "Guests can play all games but progress is not saved.",
+                    text = "Sign in to play online. Offline games do not need an account.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Secondary,
                     textAlign = TextAlign.Center
                 )
+                TextButton(onClick = onBack) { Text("Back to home") }
             }
         }
     }

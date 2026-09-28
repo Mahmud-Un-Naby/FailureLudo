@@ -18,7 +18,8 @@ import com.failureludo.ui.theme.*
 
 @Composable
 fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Unit,
-    hasActiveGame: Boolean, onRules: () -> Unit, onSettings: () -> Unit, isSessionRestored: Boolean, resumeSummary: String = "") {
+    hasActiveGame: Boolean, onRules: () -> Unit, onSettings: () -> Unit, isSessionRestored: Boolean,
+    resumeSummary: String = "", onPlayOnline: (() -> Unit)? = null) {
     Box(Modifier.fillMaxSize().gardenBackground(dark = true)
         .safeDrawingPadding(), contentAlignment=Alignment.Center) {
         Column(Modifier.widthIn(max=420.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp),
@@ -44,6 +45,14 @@ fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Uni
                     colors=ButtonDefaults.outlinedButtonColors(contentColor=TabletopStyle.Paper,
                         disabledContentColor=TabletopStyle.Muted.copy(alpha=.45f))) {
                     Text("Saved games")
+                }
+                onPlayOnline?.let { playOnline ->
+                    OutlinedButton(onClick = playOnline,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TabletopStyle.Paper)) {
+                        Text("Play online · Preview")
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     TextButton(onClick = onRules) { Text("Rules", color = TabletopStyle.Paper) }
