@@ -28,12 +28,12 @@ class PawnAnimationTimingTest {
     }
 
     @Test fun fullSliderRangeProducesPositiveNonIncreasingDurations() {
-        val durations = (0..10).map { tick ->
-            val speed = 1f + tick * 0.5f
+        val durations = (0..23).map { tick ->
+            val speed = 0.25f + tick * 0.25f
             val timing = PawnAnimationTiming(FeedbackSettings(forwardPawnSpeed = speed, backwardPawnSpeed = speed))
             timing.stepDurationMillis(capture, 3, false) to timing.stepDurationMillis(capture, 4, false)
         }
-        assertEquals(130 to 35, durations.first())
+        assertEquals(520 to 140, durations.first())
         assertEquals(22 to 6, durations.last())
         durations.zipWithNext().forEach { (slower, faster) ->
             assertTrue(faster.first in 1 until slower.first)
@@ -43,7 +43,7 @@ class PawnAnimationTimingTest {
     }
 
     @Test fun reducedMotionOverridesBothDirectionsAtEverySpeed() {
-        for (speed in listOf(1f, 2f, 6f)) {
+        for (speed in listOf(0.25f, 0.5f, 0.75f, 1f, 2f, 6f)) {
             val timing = PawnAnimationTiming(FeedbackSettings(forwardPawnSpeed = speed, backwardPawnSpeed = speed))
             assertEquals(1, timing.stepDurationMillis(capture, 3, true))
             assertEquals(1, timing.stepDurationMillis(capture, 4, true))
@@ -63,6 +63,6 @@ class PawnAnimationTimingTest {
     @Test fun invalidSpeedsCannotBreakAnAnimation() {
         val timing = PawnAnimationTiming(FeedbackSettings(forwardPawnSpeed = Float.NaN, backwardPawnSpeed = 0f))
         assertEquals(65, timing.stepDurationMillis(capture, 3, false))
-        assertEquals(35, timing.stepDurationMillis(capture, 4, false))
+        assertEquals(140, timing.stepDurationMillis(capture, 4, false))
     }
 }

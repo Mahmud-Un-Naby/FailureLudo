@@ -147,7 +147,7 @@ internal fun FeedbackSettingsDialog(
                 SettingsCard {
                     SettingsHeading("Pawn speed")
                     Text(if (settings.reducedMotion) "Turn off reduced motion to adjust speeds. Your choices are kept."
-                        else "Higher values are faster. Default: 2×.", style = MaterialTheme.typography.bodyMedium)
+                        else "Below 1× is slower than the original speed; above 1× is faster. Default: 2×.", style = MaterialTheme.typography.bodyMedium)
                     PawnSpeedSlider("Forward speed", settings.forwardPawnSpeed, !settings.reducedMotion) {
                         onSettingsChange(settings.copy(forwardPawnSpeed = it))
                     }
@@ -191,7 +191,7 @@ private fun PawnSpeedSlider(label: String, speed: Float, enabled: Boolean, onSpe
             steps = ((PawnMovementSpeed.MAX - PawnMovementSpeed.MIN) / PawnMovementSpeed.INCREMENT).toInt() - 1,
             modifier = Modifier.semantics { contentDescription = label; stateDescription = "$valueLabel speed" })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("1× · Original", style = MaterialTheme.typography.labelSmall)
+            Text("0.25× · Slowest", style = MaterialTheme.typography.labelSmall)
             Text("6× · Fastest", style = MaterialTheme.typography.labelSmall)
         }
     }

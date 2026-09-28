@@ -19,13 +19,13 @@ class PawnSpeedPreferencesTest {
 
     @Test fun differentSpeedsSurvivePersistenceAndOtherSettingsChanges() {
         val prefs = mutablePreferencesOf()
-        prefs.writeFeedbackSettings(FeedbackSettings(forwardPawnSpeed = 2.5f, backwardPawnSpeed = 1f))
+        prefs.writeFeedbackSettings(FeedbackSettings(forwardPawnSpeed = 2.5f, backwardPawnSpeed = 0.25f))
         val restored = prefs.toPreferences().toFeedbackSettings()
         assertEquals(2.5f, restored.forwardPawnSpeed)
-        assertEquals(1f, restored.backwardPawnSpeed)
+        assertEquals(0.25f, restored.backwardPawnSpeed)
         prefs.writeFeedbackSettings(restored.copy(soundEnabled = false, reducedMotion = true))
         assertEquals(2.5f, prefs.toFeedbackSettings().forwardPawnSpeed)
-        assertEquals(1f, prefs.toFeedbackSettings().backwardPawnSpeed)
+        assertEquals(0.25f, prefs.toFeedbackSettings().backwardPawnSpeed)
     }
 
     @Test fun changingAndResettingSpeedsPreservesExistingFeedbackChoices() {
@@ -34,7 +34,7 @@ class PawnSpeedPreferencesTest {
             masterVolume = 0.35f, singleMoveAssistEnabled = true,
             soundSelections = mapOf(FeedbackEvent.CAPTURE to "snake_capture_hiss")))
         val original = prefs.toFeedbackSettings()
-        prefs.writeFeedbackSettings(original.copy(forwardPawnSpeed = 4f, backwardPawnSpeed = 1f))
+        prefs.writeFeedbackSettings(original.copy(forwardPawnSpeed = 4f, backwardPawnSpeed = 0.25f))
         prefs.writeFeedbackSettings(prefs.toFeedbackSettings().copy(
             forwardPawnSpeed = PawnMovementSpeed.DEFAULT, backwardPawnSpeed = PawnMovementSpeed.DEFAULT))
         assertEquals(original, prefs.toFeedbackSettings())
@@ -42,7 +42,7 @@ class PawnSpeedPreferencesTest {
 
     @Test fun invalidStoredSpeedsAreBoundedIndependently() {
         listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, -2f, 0f, 99f).forEach { bad ->
-            val expected = if (!bad.isFinite()) 2f else bad.coerceIn(1f, 6f)
+            val expected = if (!bad.isFinite()) 2f else bad.coerceIn(0.25f, 6f)
             val prefs = mutablePreferencesOf(forwardKey to bad, backwardKey to 2f)
             assertEquals(expected, prefs.toFeedbackSettings().forwardPawnSpeed)
             assertEquals(2f, prefs.toFeedbackSettings().backwardPawnSpeed)
@@ -53,9 +53,9 @@ class PawnSpeedPreferencesTest {
         }
     }
 
-    @Test fun previousSlowSettingsClampButOriginalAndFasterChoicesSurvive() {
+    @Test fun slowOriginalAndFasterSavedChoicesSurvive() {
         val prefs = mutablePreferencesOf(forwardKey to 0.5f, backwardKey to 4f)
-        assertEquals(1f, prefs.toFeedbackSettings().forwardPawnSpeed)
+        assertEquals(0.5f, prefs.toFeedbackSettings().forwardPawnSpeed)
         assertEquals(4f, prefs.toFeedbackSettings().backwardPawnSpeed)
         prefs[forwardKey] = 1f
         assertEquals(1f, prefs.toFeedbackSettings().forwardPawnSpeed)
@@ -65,6 +65,6 @@ class PawnSpeedPreferencesTest {
         val prefs = mutablePreferencesOf()
         prefs.writeFeedbackSettings(FeedbackSettings(forwardPawnSpeed = Float.NaN, backwardPawnSpeed = -1f))
         assertEquals(2f, prefs[forwardKey])
-        assertEquals(1f, prefs[backwardKey])
+        assertEquals(0.25f, prefs[backwardKey])
     }
 }

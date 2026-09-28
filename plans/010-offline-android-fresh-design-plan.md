@@ -636,3 +636,16 @@ tiles with an actual board preview and replaces the pale setup background with a
   and cover custom draft reopening, selected colors, teams, sound
   selection/defaults/mute, speed independence and back navigation. Device execution, visual
   review at large text/landscape, and listening review remain with the user.
+
+
+## Follow-up — extend pawn speed below the original pace
+
+- Per user feedback, Settings → Motion now offers independent forward/backward speeds
+  from 0.25× to 6× in 0.25× increments. The 2× default and existing saved selections
+  remain; the page explains that values below 1× are slower than the original pace.
+- Timing uses the existing continuous animation. Updated regression checks cover the
+  full range, saved sub-1× values, independent controls, reset, and reduced motion.
+- All 111 app unit tests passed and Android UI tests compiled. Device UI execution
+  and play-speed review remain with the user.
+- Normal signed release APK built successfully; release lint and APK signature checks
+  passed. Artifact: `app/build/outputs/apk/release/app-release.apk`. Nothing published.
