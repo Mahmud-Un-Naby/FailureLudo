@@ -2,8 +2,10 @@
 
 ## Resumption handoff — 28 September 2026
 
-The user explicitly resumed online Android work. Stay on `feat/offline-improvements`;
-local startup, saves, and offline play remain available without authentication.
+The user explicitly resumed online Android work, then requested consolidation of the
+branches. `main` now carries the offline improvements; continue online development on
+`feat/online-testing` and retire `feat/offline-improvements`. Local startup, saves, and
+offline play remain available without authentication.
 The historical checkboxes below predate retained implementation and are not a current audit.
 
 First increment: expose **Play online · Preview** in debug builds only, with optional
