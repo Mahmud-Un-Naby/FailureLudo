@@ -42,14 +42,18 @@ data class SoundCategory(
 /** Add bundled audio and an option here; playback, persistence and the picker use this list. */
 object SoundCatalog {
     val categories: List<SoundCategory> = listOf(
-        SoundCategory(FeedbackEvent.DICE_ROLL, "tabletop_dice_roll", listOf(
-            SoundOption("tabletop_dice_roll", "Tabletop", R.raw.tabletop_dice_roll, 0.85f, 0.97f, 1.03f)
+        SoundCategory(FeedbackEvent.DICE_ROLL, "wooden_dice_roll", listOf(
+            SoundOption("wooden_dice_roll", "Wooden tumble", R.raw.wooden_dice_roll, 0.52f, 0.97f, 1.03f),
+            SoundOption("wooden_dice_light", "Light wooden roll", R.raw.wooden_dice_light, 0.70f, 0.97f, 1.03f),
+            SoundOption("tabletop_dice_roll", "Original tabletop", R.raw.tabletop_dice_roll, 0.85f, 0.97f, 1.03f)
         )),
         SoundCategory(FeedbackEvent.PIECE_MOVE, "tabletop_piece_move", listOf(
-            SoundOption("tabletop_piece_move", "Tabletop", R.raw.tabletop_piece_move, 0.90f, 0.98f, 1.02f)
+            SoundOption("tabletop_piece_move", "Tabletop", R.raw.tabletop_piece_move, 0.90f, 0.98f, 1.02f),
+            SoundOption("wooden_piece_tap", "Wooden tap", R.raw.wooden_piece_tap, 0.50f, 0.98f, 1.02f)
         )),
         SoundCategory(FeedbackEvent.CAPTURE, "original_capture", listOf(
-            SoundOption("original_capture", "Tut tut faah", R.raw.sfx_capture, 1.20f)
+            SoundOption("original_capture", "Tut tut faah", R.raw.sfx_capture, 1.20f),
+            SoundOption("wooden_capture_knock", "Wooden double knock", R.raw.wooden_capture_knock, 0.85f)
         )),
         SoundCategory(FeedbackEvent.PIECE_FINISH, "tabletop_piece_finish", listOf(
             SoundOption("tabletop_piece_finish", "Tabletop", R.raw.tabletop_piece_finish, 0.24f)

@@ -514,3 +514,20 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
   `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline --console=plain`.
   Device execution and listening review remain with the user. Review Settings → Advanced
   settings from home and gameplay, previews with mute/volume, reset, and persistence after restart.
+
+
+## September 28 follow-up — recorded wooden sound alternatives
+
+- Added Wooden tumble (new dice default) and Light wooden roll from Wuzzy's CC0 wooden-die
+  recordings, plus optional Wooden tap for pawn movement and Wooden double knock for captures
+  from Aidan_Walker's CC0 board-piece recordings. All original options and stable IDs remain.
+- Trimmed/filtered real recordings retain the existing cue timing; dice/pawn mixer gains are
+  approximately matched to previous RMS levels. Four app WAVs total 73,822 bytes. Original source
+  recordings, exact URLs, licenses, checksums, and repeatable preparation are retained under
+  [audio sources](../design/audio/README.md).
+- New/default preferences and Reset sound choices use Wooden tumble. Existing saved original
+  dice choices are preserved; choose Wooden tumble in Advanced settings to switch. Other
+  categories keep their existing defaults.
+- Validation: all 87 app unit tests passed; debug APK build and UI-test compilation passed.
+  WAV checks passed for mono 22,050 Hz / 16-bit PCM, duration, endpoint fades, and peak headroom.
+  Device UI execution and subjective phone/headphone listening are still for user review.

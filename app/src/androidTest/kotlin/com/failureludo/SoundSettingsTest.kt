@@ -32,6 +32,22 @@ class SoundSettingsTest {
         compose.onNodeWithText("Sound effects").assertIsDisplayed()
     }
 
+    @Test fun choosingAnAlternativeAndResettingUpdatesTheListedSelection() {
+        var settings = FeedbackSettings()
+        compose.setContent {
+            var current by remember { mutableStateOf(settings) }
+            MaterialTheme {
+                FeedbackSettingsDialog(current, { settings = it; current = it }, {}, { _, _ -> }, {})
+            }
+        }
+        compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
+        compose.onNodeWithText("Light wooden roll").performScrollTo().performClick()
+        compose.onNodeWithText("Light wooden roll").assertIsSelected()
+        compose.runOnIdle { assertEquals("wooden_dice_light", settings.soundSelections[FeedbackEvent.DICE_ROLL]) }
+        compose.onNodeWithText("Reset sound choices").performScrollTo().performClick()
+        compose.onNodeWithText("Wooden tumble").performScrollTo().assertIsSelected()
+    }
+
     @Test fun muteDisablesPreviewsButLeavesChoicesAccessible() {
         compose.setContent {
             MaterialTheme {
@@ -39,7 +55,7 @@ class SoundSettingsTest {
             }
         }
         compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Preview Dice roll: Tabletop")
+        compose.onNodeWithContentDescription("Preview Dice roll: Wooden tumble")
             .performScrollTo().assertIsNotEnabled()
         compose.onAllNodes(isSelectable()).onFirst().assertIsEnabled().assertIsSelected()
     }

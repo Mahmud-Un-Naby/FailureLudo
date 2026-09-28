@@ -12,7 +12,7 @@ import org.junit.Test
 class SoundPreferencesTest {
     private val defaults = SoundCatalog.categories.associate { it.event to it.defaultId }
 
-    @Test fun existingInstallationsUseTheCurrentSoundsWithoutStoredChoices() {
+    @Test fun installationsWithoutStoredChoicesUseWoodenDiceByDefault() {
         assertEquals(defaults, emptyPreferences().readSoundSelections())
     }
 
@@ -32,6 +32,27 @@ class SoundPreferencesTest {
             stringPreferencesKey("sound_selection_win") to "tabletop_win"
         )
         assertEquals(defaults, preferences.readSoundSelections())
+    }
+
+    @Test fun alternativesRoundTripIndependentlyAndResetReturnsToWoodenDice() {
+        val preferences = mutablePreferencesOf()
+        val selected = defaults + mapOf(
+            FeedbackEvent.DICE_ROLL to "wooden_dice_light",
+            FeedbackEvent.PIECE_MOVE to "wooden_piece_tap",
+            FeedbackEvent.CAPTURE to "wooden_capture_knock"
+        )
+        preferences.writeSoundSelections(selected)
+        assertEquals(selected, preferences.readSoundSelections())
+        preferences.writeSoundSelections(emptyMap())
+        assertEquals("wooden_dice_roll", preferences.readSoundSelections()[FeedbackEvent.DICE_ROLL])
+        assertEquals("original_capture", preferences.readSoundSelections()[FeedbackEvent.CAPTURE])
+    }
+
+    @Test fun savedOriginalDiceChoiceSurvivesTheNewDefault() {
+        val preferences = mutablePreferencesOf(
+            stringPreferencesKey("sound_selection_dice_roll") to "tabletop_dice_roll"
+        )
+        assertEquals("tabletop_dice_roll", preferences.readSoundSelections()[FeedbackEvent.DICE_ROLL])
     }
 
     @Test fun resetClearsStaleSelectionsAndPreservesOtherSettings() {
