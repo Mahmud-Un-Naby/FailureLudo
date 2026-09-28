@@ -16,8 +16,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.failureludo.data.FeedbackSettings
+import com.failureludo.data.PawnMovementSpeed
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.SoundCatalog
 
@@ -41,6 +43,34 @@ internal fun FeedbackSettingsDialog(
         title = { Text("Settings") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Pawn speed", style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() })
+                Text("Saved for all games. Changes apply from the next move. Higher values are faster.")
+                PawnSpeedSlider(
+                    label = "Forward speed",
+                    speed = settings.forwardPawnSpeed,
+                    enabled = !settings.reducedMotion,
+                    onSpeedChange = { onSettingsChange(settings.copy(forwardPawnSpeed = it)) }
+                )
+                PawnSpeedSlider(
+                    label = "Backward speed",
+                    speed = settings.backwardPawnSpeed,
+                    enabled = !settings.reducedMotion,
+                    onSpeedChange = { onSettingsChange(settings.copy(backwardPawnSpeed = it)) }
+                )
+                Text("Backward speed controls captured pawns returning to base.",
+                    style = MaterialTheme.typography.bodySmall)
+                if (settings.reducedMotion) {
+                    Text("Reduced motion uses minimal animation. Turn it off to adjust pawn speeds.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = {
+                    onSettingsChange(settings.copy(
+                        forwardPawnSpeed = PawnMovementSpeed.DEFAULT,
+                        backwardPawnSpeed = PawnMovementSpeed.DEFAULT
+                    ))
+                }) { Text("Reset pawn speeds") }
+                HorizontalDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -129,6 +159,32 @@ internal fun FeedbackSettingsDialog(
             }
         }
     )
+}
+
+@Composable
+private fun PawnSpeedSlider(label: String, speed: Float, enabled: Boolean, onSpeedChange: (Float) -> Unit) {
+    // Keep dragging local; persist once on release instead of writing on every frame.
+    var pendingSpeed by remember(speed) { mutableFloatStateOf(PawnMovementSpeed.sanitize(speed)) }
+    val speedLabel = "${pendingSpeed.toString().removeSuffix(".0")}×"
+    Column {
+        Text("$label: $speedLabel")
+        Slider(
+            value = pendingSpeed,
+            onValueChange = { pendingSpeed = it },
+            onValueChangeFinished = { onSpeedChange(pendingSpeed) },
+            enabled = enabled,
+            valueRange = PawnMovementSpeed.MIN..PawnMovementSpeed.MAX,
+            steps = ((PawnMovementSpeed.MAX - PawnMovementSpeed.MIN) / PawnMovementSpeed.INCREMENT).toInt() - 1,
+            modifier = Modifier.semantics {
+                contentDescription = label
+                stateDescription = "$speedLabel speed"
+            }
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("0.5× · Slower", style = MaterialTheme.typography.labelSmall)
+            Text("4× · Faster", style = MaterialTheme.typography.labelSmall)
+        }
+    }
 }
 
 @Composable

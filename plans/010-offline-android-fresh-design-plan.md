@@ -547,3 +547,30 @@ the board, gameplay controls, exit prompt, and victory screen remain unchanged.
   defaults) passed; debug APK build passed. Hiss WAV format, duration, fades, and headroom checked.
   Device visual/listening checks remain with the user: select Snake hiss, capture a pawn or pair,
   and review the skull timing plus muted/reduced-motion behavior.
+
+
+## September 28 follow-up — adjustable pawn speeds
+
+- Home and in-game Settings share separate Forward speed and Backward speed sliders,
+  from 0.5× to 4× in 0.25× increments, plus Reset pawn speeds. Backward means the
+  captured pawn's return to base. Both default to 1×, retaining the existing 130 ms
+  forward / 35 ms return steps until tester feedback establishes new defaults.
+- Preferences persist locally across sessions and games; each slider saves on release.
+  Missing values use defaults; non-finite values fall back and out-of-range values clamp.
+  Speed settings are presentation preferences, independent of rules, saves, and history.
+- Each move snapshots its speeds. Collision landing uses forward speed; capture returns
+  use backward speed. Reduced motion still overrides step timing and disables the sliders
+  while retaining their values. Reset affects only the two speed preferences.
+- Existing completion-based input locks, bot turn handoff, replay autoplay, and sound
+  sequencing remain in use. Dice, bot thinking delays, capture effects/hold, and final
+  settling delay retain their timing; these controls adjust pawn travel only. Actual
+  animation durations are subject to display frame rate, especially fast return steps.
+- Validation: all 101 app unit tests passed, debug APK built, and UI tests compiled via
+  `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline --console=plain`.
+  Coverage includes preference round trips, independent speeds, invalid values, capture
+  paths/contact timing, reduced motion, and the full speed range. UI tests are compiled,
+  not device-executed. The existing unrelated TabletopGameLayout edit is preserved.
+- Device review remains with the user: adjust each speed from home and during a game,
+  restart to check persistence, try long captures and pairs at both extremes, review
+  bot/replay sequencing and sound, then reset. Collect forward/backward values separately
+  with tester feedback before choosing new defaults.

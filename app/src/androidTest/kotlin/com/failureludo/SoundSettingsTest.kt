@@ -29,7 +29,7 @@ class SoundSettingsTest {
         compose.runOnIdle { assertEquals(FeedbackEvent.CAPTURE to "original_capture", preview) }
         compose.onNodeWithText("Reset sound choices").performScrollTo().performClick()
         compose.onNodeWithText("Back to settings").performClick()
-        compose.onNodeWithText("Sound effects").assertIsDisplayed()
+        compose.onNodeWithText("Sound effects").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun choosingAnAlternativeAndResettingUpdatesTheListedSelection() {

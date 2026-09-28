@@ -62,8 +62,6 @@ internal data class BoardLayoutSizing(
 )
 
 
-private const val PAWN_STEP_MS = 130
-private const val CAPTURE_RETURN_STEP_MS = 35
 private const val CAPTURE_HOLD_MS = 160
 private const val CAPTURE_EFFECT_MS = 440
 
@@ -207,6 +205,7 @@ fun GameBoardScreen(
         if (animatedPieceCells.isNotEmpty()) animatedPieceCells else firstFrameAnimationCells
 
     LaunchedEffect(gameState.players, gameState.moveCounter) {
+        val pawnTiming = PawnAnimationTiming(latestFeedbackSettings)
         val currentPositions = extractPiecePositions(gameState)
         val previousPositions = previousPiecePositions
         val isForwardMove = previousMoveCounter >= 0L && gameState.moveCounter > previousMoveCounter
@@ -226,9 +225,8 @@ fun GameBoardScreen(
                             if (stepIndex > 0) {
                                 movementProgress.snapTo(0f)
                                 movementProgress.animateTo(1f, tween(
-                                    durationMillis = if (latestFeedbackSettings.reducedMotion) 1 else
-                                        if (hasCaptureDuringAnimation && stepIndex >= movingPieceStepCount)
-                                            CAPTURE_RETURN_STEP_MS else PAWN_STEP_MS,
+                                    durationMillis = pawnTiming.stepDurationMillis(
+                                        precomputedAnimationPlan, stepIndex, latestFeedbackSettings.reducedMotion),
                                     easing = LinearEasing))
                             }
                             if (stepIndex in 1 until movingPieceStepCount) {
