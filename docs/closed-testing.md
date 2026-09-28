@@ -4,6 +4,11 @@ Prepared September 25, 2026. Scope: offline Android; no analytics added.
 
 ## Current status
 
+The pregame UI update was released from `feat/offline-improvements` as 1.0.9
+(code 13). A fresh Play API inventory confirms `alpha: completed 1.0.9 (13)`;
+13 is the highest visible uploaded code. The signed release APK and AAB built
+successfully. Device visual review and tester retests remain pending.
+
 The September 25 API audit found 1.0.9 (code 11) published to closed alpha testing
 in Bangladesh, while internal testing still had code 1. The owner reports the
 additional 14-day period has already elapsed, with most recent improvements shipped

@@ -28,6 +28,23 @@ class QuickGameSetupTest {
         }
     }
 
+    @Test fun computerPresetsHaveOneHumanAndNamedComputerOpponents() {
+        for (count in 2..4) {
+            val setup = quickGameSetup(count, vsComputer = true)
+            val game = GameEngine.newGame(activeColors = setup.activeColors,
+                playerTypes = setup.playerTypes, playerNames = setup.playerNames, mode = setup.mode)
+            val players = game.players.filter { it.isActive }
+            assertEquals(count, players.size)
+            assertEquals(1, players.count { it.type == PlayerType.HUMAN })
+            assertEquals(count - 1, players.count { it.type == PlayerType.BOT })
+            assertEquals("You", game.currentPlayer.name)
+            assertEquals(PlayerType.HUMAN, game.currentPlayer.type)
+            assertEquals(count, players.map { it.name }.distinct().size)
+            assertEquals(BotBehaviorMode.HEURISTIC, setup.botBehaviorMode)
+        }
+        assertTrue(quickGameSetup().playerTypes.values.all { it == PlayerType.HUMAN })
+    }
+
     @Test fun oldExperimentalPreferencesUseRegularComputerForNewGames() {
         val saved = SetupState(
             activeColors = listOf(PlayerColor.RED, PlayerColor.BLUE),

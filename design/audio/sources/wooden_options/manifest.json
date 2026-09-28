@@ -1,0 +1,78 @@
+{
+  "preparation": "../../prepare_wooden_options.py",
+  "format": "Mono 22050 Hz signed 16-bit PCM WAV; 80 Hz high-pass, listed low-pass, 1 ms attack / 15 ms release fades, peak 0.65; no time stretching or synthesis.",
+  "sounds": [
+    {
+      "source_file": "wooden_dice_1.flac",
+      "source_sha256": "c645a3a25eb9523e5a86495faf71edf30a5d509ca0ba62388d132b8ca1ff7551",
+      "creator": "Wuzzy",
+      "source_page": "https://opengameart.org/content/wooden-dice-on-wodden-table-roll",
+      "download_url": "https://opengameart.org/sites/default/files/Holzw%C3%BCrfel_auf_Holztisch_1.flac",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "retrieved": "2026-09-28",
+      "output_file": "wooden_dice_roll.wav",
+      "trim_seconds": [
+        0,
+        0.525
+      ],
+      "lead_seconds": 0.05,
+      "duration_seconds": 0.64,
+      "lowpass_hz": 3600
+    },
+    {
+      "source_file": "wooden_dice_4.flac",
+      "source_sha256": "7d2d2332bc5f3ae57c151e07526956993c6647dc9795bd35ec3b99f8229fabda",
+      "creator": "Wuzzy",
+      "source_page": "https://opengameart.org/content/wooden-dice-on-wodden-table-roll",
+      "download_url": "https://opengameart.org/sites/default/files/Holzw%C3%BCrfel_auf_Holztisch_4.flac",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "retrieved": "2026-09-28",
+      "output_file": "wooden_dice_light.wav",
+      "trim_seconds": [
+        0,
+        0.52
+      ],
+      "lead_seconds": 0.05,
+      "duration_seconds": 0.6,
+      "lowpass_hz": 3000
+    },
+    {
+      "source_file": "wobble04.ogg",
+      "source_sha256": "779db6e47e9aff38fce6ef398579a7268b24a769e3726e9106485226913ba752",
+      "creator": "Aidan_Walker",
+      "source_page": "https://opengameart.org/content/boardgame-piece-wobbles",
+      "download_url": "https://opengameart.org/sites/default/files/boardgame_piece_wobbles.zip",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "retrieved": "2026-09-28",
+      "output_file": "wooden_piece_tap.wav",
+      "trim_seconds": [
+        0.17,
+        0.3
+      ],
+      "lead_seconds": 0,
+      "duration_seconds": 0.13,
+      "lowpass_hz": 4200
+    },
+    {
+      "source_file": "wobble01.ogg",
+      "source_sha256": "150d1ded7dd03c3bc521cd967b8da97895a091c974e3d7134b0dcb77cb66748c",
+      "creator": "Aidan_Walker",
+      "source_page": "https://opengameart.org/content/boardgame-piece-wobbles",
+      "download_url": "https://opengameart.org/sites/default/files/boardgame_piece_wobbles.zip",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "retrieved": "2026-09-28",
+      "output_file": "wooden_capture_knock.wav",
+      "trim_seconds": [
+        0.24,
+        0.54
+      ],
+      "lead_seconds": 0,
+      "duration_seconds": 0.3,
+      "lowpass_hz": 3600
+    }
+  ]
+}

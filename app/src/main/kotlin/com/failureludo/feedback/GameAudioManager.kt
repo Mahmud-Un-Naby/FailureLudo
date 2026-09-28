@@ -3,23 +3,13 @@ package com.failureludo.feedback
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
+import android.util.Log
+import com.failureludo.data.FeedbackSettings
 import kotlin.random.Random
 
-class GameAudioManager(
-    context: Context,
-    private val soundPrefix: String = "sfx_",
-    private val soundOverrides: Map<FeedbackEvent, Int> = emptyMap()
-) {
-
-    private data class EventMixConfig(
-        val gain: Float,
-        val pitchMin: Float = 1f,
-        val pitchMax: Float = 1f
-    )
-
+class GameAudioManager(context: Context) {
     private val appContext = context.applicationContext
-    private val random = Random.Default
-    private val soundPool: SoundPool = SoundPool.Builder()
+    private val soundPool = SoundPool.Builder()
         .setMaxStreams(4)
         .setAudioAttributes(
             AudioAttributes.Builder()
@@ -29,67 +19,97 @@ class GameAudioManager(
         )
         .build()
 
-    private val soundAssetNames: Map<FeedbackEvent, String> = mapOf(
-        FeedbackEvent.DICE_ROLL to "sfx_dice_roll",
-        FeedbackEvent.PIECE_MOVE to "sfx_piece_move",
-        FeedbackEvent.CAPTURE to "sfx_capture",
-        FeedbackEvent.PIECE_FINISH to "sfx_piece_finish",
-        FeedbackEvent.EXTRA_ROLL to "sfx_extra_roll",
-        FeedbackEvent.TURN_SKIP to "sfx_turn_skip",
-        FeedbackEvent.INVALID_ACTION to "sfx_invalid_action",
-        FeedbackEvent.WIN to "sfx_win"
-    )
-
-    private val eventMixConfig: Map<FeedbackEvent, EventMixConfig> = mapOf(
-        FeedbackEvent.DICE_ROLL to EventMixConfig(gain = 0.85f, pitchMin = 0.97f, pitchMax = 1.03f),
-        FeedbackEvent.PIECE_MOVE to EventMixConfig(gain = 0.90f, pitchMin = 0.98f, pitchMax = 1.02f),
-        FeedbackEvent.CAPTURE to EventMixConfig(gain = 1.20f),
-        FeedbackEvent.PIECE_FINISH to EventMixConfig(gain = 0.24f),
-        FeedbackEvent.EXTRA_ROLL to EventMixConfig(gain = 0.23f),
-        FeedbackEvent.TURN_SKIP to EventMixConfig(gain = 0.24f),
-        FeedbackEvent.INVALID_ACTION to EventMixConfig(gain = 0.25f),
-        FeedbackEvent.WIN to EventMixConfig(gain = 0.55f)
-    )
-
-    private val loadedSoundIds = mutableMapOf<FeedbackEvent, Int>()
+    // Cache by resource so options sharing an asset load it only once.
+    private val loadedSoundIds = mutableMapOf<Int, Int>()
     private val readySoundIds = mutableSetOf<Int>()
+    private var released = false
+    private var pendingPreview: Pair<SoundOption, Float>? = null
+    private var previewStreamId = 0
 
     init {
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
-            if (status == 0) {
-                readySoundIds += sampleId
+            synchronized(this) {
+                if (!released && sampleId in loadedSoundIds.values) {
+                    if (status == 0) {
+                        readySoundIds += sampleId
+                        pendingPreview?.let { (option, volume) ->
+                            if (loadedSoundIds[option.resourceId] == sampleId) {
+                                pendingPreview = null
+                                previewStreamId = playReady(option, volume)
+                            }
+                        }
+                    } else {
+                        Log.w("GameAudioManager", "Sound sample failed to load: $status")
+                        val resourceId = loadedSoundIds.entries.first { it.value == sampleId }.key
+                        loadedSoundIds.remove(resourceId)
+                        if (pendingPreview?.first?.resourceId == resourceId) pendingPreview = null
+                    }
+                }
             }
         }
-        preloadKnownSounds()
+        prepare(FeedbackSettings())
     }
 
-    private fun preloadKnownSounds() {
-        soundAssetNames.forEach { (event, rawName) ->
-            val resourceId = soundOverrides[event] ?: appContext.resources.getIdentifier(
-                rawName.replace("sfx_", soundPrefix), "raw", appContext.packageName)
-            if (resourceId != 0) {
-                loadedSoundIds[event] = soundPool.load(appContext, resourceId, 1)
-            }
+    /** Keep only selected assets resident as the catalog grows. Never queue late gameplay cues. */
+    @Synchronized
+    fun prepare(settings: FeedbackSettings) {
+        if (released) return
+        pendingPreview = null
+        if (!settings.soundEnabled) {
+            soundPool.stop(previewStreamId)
+            previewStreamId = 0
         }
-    }
-
-    fun play(event: FeedbackEvent, masterVolume: Float): Boolean {
-        val soundId = loadedSoundIds[event] ?: return false
-        if (soundId !in readySoundIds) return false
-
-        val mixConfig = eventMixConfig[event] ?: EventMixConfig(gain = 1f)
-        val clampedVolume = (masterVolume.coerceIn(0f, 1f) * mixConfig.gain).coerceIn(0f, 1f)
-        val playbackRate = if (mixConfig.pitchMin == mixConfig.pitchMax) {
-            mixConfig.pitchMin
-        } else {
-            random.nextDouble(mixConfig.pitchMin.toDouble(), mixConfig.pitchMax.toDouble()).toFloat()
+        val selectedResources = SoundCatalog.categories.map {
+            it.resolve(settings.soundSelections[it.event]).resourceId
+        }.toSet()
+        loadedSoundIds.keys.toList().filter { it !in selectedResources }.forEach { resourceId ->
+            val sampleId = loadedSoundIds.remove(resourceId) ?: return@forEach
+            readySoundIds.remove(sampleId)
+            soundPool.unload(sampleId)
         }
-
-        val streamId = soundPool.play(soundId, clampedVolume, clampedVolume, 1, 0, playbackRate)
-        return streamId != 0
+        selectedResources.forEach(::load)
     }
 
+    private fun load(resourceId: Int): Int {
+        loadedSoundIds[resourceId]?.let { return it }
+        val sampleId = soundPool.load(appContext, resourceId, 1)
+        if (sampleId != 0) loadedSoundIds[resourceId] = sampleId
+        else Log.w("GameAudioManager", "Sound resource could not be loaded: $resourceId")
+        return sampleId
+    }
+
+    @Synchronized
+    fun play(option: SoundOption, volumeScale: Float): Boolean {
+        if (released) return false
+        load(option.resourceId)
+        return playReady(option, volumeScale) != 0
+    }
+
+    @Synchronized
+    fun preview(option: SoundOption, volumeScale: Float) {
+        if (released) return
+        soundPool.stop(previewStreamId)
+        pendingPreview = null
+        val sampleId = load(option.resourceId)
+        if (sampleId in readySoundIds) previewStreamId = playReady(option, volumeScale)
+        else if (sampleId != 0) pendingPreview = option to volumeScale
+    }
+
+    private fun playReady(option: SoundOption, volumeScale: Float): Int {
+        val sampleId = loadedSoundIds[option.resourceId] ?: return 0
+        if (sampleId !in readySoundIds) return 0
+        val volume = (volumeScale.coerceIn(0f, 1f) * option.gain).coerceIn(0f, 1f)
+        if (volume <= 0f) return 0
+        val pitch = if (option.pitchMin == option.pitchMax) option.pitchMin
+        else Random.nextDouble(option.pitchMin.toDouble(), option.pitchMax.toDouble()).toFloat()
+        return soundPool.play(sampleId, volume, volume, 1, 0, pitch)
+    }
+
+    @Synchronized
     fun release() {
+        if (released) return
+        released = true
+        pendingPreview = null
         loadedSoundIds.clear()
         readySoundIds.clear()
         soundPool.release()

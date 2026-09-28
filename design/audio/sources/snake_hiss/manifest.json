@@ -1,0 +1,20 @@
+{
+  "source_file": "reitanna_hiss2_preview.mp3",
+  "source_sha256": "454a507675ddbaea0b82fc062331e939de8b99e47b15a3eec82beca142cbd1ba",
+  "creator": "Reitanna",
+  "title": "hiss2.wav",
+  "source_page": "https://freesound.org/people/Reitanna/sounds/343927/",
+  "download_url": "https://cdn.freesound.org/previews/343/343927_950925-hq.mp3",
+  "source_format": "Public high-quality MP3 preview of the CC0 sound, not the original WAV",
+  "license": "CC0-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "retrieved": "2026-09-28",
+  "output_file": "snake_capture_hiss.wav",
+  "trim_seconds": [
+    0.04,
+    0.6
+  ],
+  "duration_seconds": 0.6,
+  "preparation": "../../prepare_snake_hiss.py",
+  "processing": "200–6500 Hz second-order Butterworth band-pass, mono 22050 Hz 16-bit PCM, 4 ms attack / 40 ms release fades, peak 0.60; no pitch shift or time stretching"
+}

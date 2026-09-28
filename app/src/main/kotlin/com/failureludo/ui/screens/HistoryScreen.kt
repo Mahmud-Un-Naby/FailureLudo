@@ -2,6 +2,15 @@ package com.failureludo.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,6 +66,7 @@ fun HistoryScreen(
     onBack: () -> Unit,
     onOpenGame: () -> Unit
 ) {
+    var pendingDelete by remember { mutableStateOf<GameHistoryRecord?>(null) }
     val records by viewModel.historyRecords.collectAsState()
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var pendingExportGameId by remember { mutableStateOf<String?>(null) }
@@ -98,23 +108,32 @@ fun HistoryScreen(
         viewModel.refreshHistoryRecords()
     }
 
+    pendingDelete?.let { record ->
+        DeleteSavedGameDialog(record.playerNames.joinToString(" · ").ifBlank { "Saved game" },
+            onDismiss = { pendingDelete = null },
+            onConfirm = {
+                pendingDelete = null
+                viewModel.deleteHistoryRecord(record.gameId)
+            })
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Game History") },
+                title = { Text("Saved games") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = OnPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
                 actions = {
                     TextButton(onClick = { importLauncher.launch(arrayOf("text/plain", "application/octet-stream")) }) {
-                        Text("Import", color = OnPrimary)
+                        Text("Import", color = Primary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Primary,
-                    titleContentColor = OnPrimary
+                    containerColor = Background,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
@@ -137,16 +156,9 @@ fun HistoryScreen(
             }
 
             if (records.isEmpty()) {
-                Text(
-                    text = "No saved games yet.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                )
-                Text(
-                    text = "Start and play games to build your replay/archive list.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f)
-                )
+                SavedGamesEmptyState {
+                    importLauncher.launch(arrayOf("text/plain", "application/octet-stream"))
+                }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -185,7 +197,7 @@ fun HistoryScreen(
                                 exportLauncher.launch("failureludo-${record.gameId.take(8)}.fln")
                             },
                             onDelete = {
-                                viewModel.deleteHistoryRecord(record.gameId)
+                                pendingDelete = record
                             }
                         )
                     }
@@ -203,15 +215,18 @@ private fun HistoryRecordCard(
     onExport: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val statusLabel = when (record.kind) {
-        GameHistoryRecordKind.PLAYABLE -> record.status?.name ?: "PLAYABLE"
-        GameHistoryRecordKind.UNSUPPORTED -> "UNSUPPORTED"
+    var showMenu by remember { mutableStateOf(false) }
+    val statusLabel = when {
+        record.kind == GameHistoryRecordKind.UNSUPPORTED -> "Unsupported game"
+        record.status == FlnGameStatus.ACTIVE -> "In progress"
+        record.status == FlnGameStatus.FINISHED -> "Finished"
+        else -> "Saved game"
     }
 
     val openLabel = if (record.status == FlnGameStatus.ACTIVE) {
         "Resume"
     } else if (record.status == FlnGameStatus.FINISHED) {
-        "Analyze"
+        "Replay"
     } else {
         "Open"
     }
@@ -227,7 +242,7 @@ private fun HistoryRecordCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "${record.gameId.take(12)}...",
+                text = record.playerNames.joinToString(" · ").ifBlank { "Saved game" },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -235,16 +250,10 @@ private fun HistoryRecordCard(
             )
 
             Text(
-                text = "Status: $statusLabel",
+                text = statusLabel,
                 style = MaterialTheme.typography.bodyMedium
             )
 
-            Text(
-                text = "Players: ${record.playerNames.joinToString(", ")}",
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
 
             Text(
                 text = "Updated: ${formatEpoch(record.updatedAtEpochMs)}",
@@ -271,67 +280,32 @@ private fun HistoryRecordCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 if (record.kind == GameHistoryRecordKind.PLAYABLE) {
-                    Button(
-                        onClick = onOpen,
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    Button(onClick = onOpen, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                         Text(openLabel)
                     }
-
-                    OutlinedButton(
-                        onClick = onReplay,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Replay")
-                    }
-
-                    TextButton(
-                        onClick = onDelete,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Delete")
+                    if (record.status != FlnGameStatus.FINISHED) {
+                        OutlinedButton(onClick = onReplay,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Replay") }
                     }
                 } else {
-                    OutlinedButton(
-                        onClick = {},
-                        enabled = false,
-                        modifier = Modifier.weight(2f)
-                    ) {
-                        Text("Unsupported")
-                    }
-
-                    OutlinedButton(
-                        onClick = onExport,
-                        enabled = false,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Export")
-                    }
-
-                    TextButton(
-                        onClick = onDelete,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Delete")
-                    }
+                    Text("Cannot play this version", modifier = Modifier.weight(1f))
                 }
-            }
-
-            if (record.kind == GameHistoryRecordKind.PLAYABLE) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onExport,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Export")
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, "Game options")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        if (record.kind == GameHistoryRecordKind.PLAYABLE) {
+                            DropdownMenuItem(text = { Text("Export") }, onClick = {
+                                showMenu = false
+                                onExport()
+                            })
+                        }
+                        DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showMenu = false; onDelete() })
                     }
                 }
             }
@@ -358,4 +332,30 @@ private fun importResultMessage(result: GameHistoryImportResult): String {
 private fun formatEpoch(epochMs: Long): String {
     val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     return formatter.format(Date(epochMs))
+}
+
+
+@Composable
+internal fun SavedGamesEmptyState(onImport: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
+        Text("No saved games yet", style = MaterialTheme.typography.headlineSmall)
+        Text("Import a game to continue playing.", style = MaterialTheme.typography.bodyMedium)
+        Button(onClick = onImport, modifier = Modifier.heightIn(min = 52.dp)) { Text("Import game") }
+    }
+}
+
+@Composable
+internal fun DeleteSavedGameDialog(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text("Delete saved game?") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(name, fontWeight = FontWeight.SemiBold)
+            Text("This saved game will be removed.")
+        } },
+        confirmButton = { TextButton(onClick = onConfirm) {
+            Text("Delete", color = MaterialTheme.colorScheme.error)
+        } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

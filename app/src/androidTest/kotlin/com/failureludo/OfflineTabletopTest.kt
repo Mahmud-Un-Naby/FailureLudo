@@ -12,6 +12,40 @@ import org.junit.Test
 class OfflineTabletopTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun customSetupKeepsSingleSeatsAndExposesSelectedColors() {
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithText("New game").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("New game").performScrollTo().performClick()
+        compose.onNodeWithText("Settings").performScrollTo().performClick()
+        compose.onNodeWithText("Players & teams").performScrollTo().performClick()
+        compose.onNodeWithText("Team").performClick()
+        compose.onAllNodesWithText("Team 1").assertCountEquals(2)
+        compose.onAllNodesWithText("Team 2").assertCountEquals(2)
+        compose.onNodeWithText("Single").performClick()
+        compose.onNodeWithContentDescription("Back to settings").performClick()
+        compose.onNodeWithText("Seats & colors").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Top left, playing").assertExists()
+        compose.onNodeWithContentDescription("Bottom right, playing").assertExists()
+        compose.onNodeWithContentDescription("Top right, empty").assertExists()
+        compose.onNodeWithContentDescription("Bottom left, empty").assertExists()
+        compose.onNodeWithText("Reset all colors").performScrollTo().performClick()
+        compose.onNode(hasContentDescription(", Red", substring = true) and isSelected()).assertExists()
+        compose.onNodeWithContentDescription("Player-1, Blue").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Player-1, Blue").assertIsSelected()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithText("Your game").assertExists()
+        compose.onNodeWithContentDescription("Board preview with 2 players").assertExists()
+        // Reopening settings must keep the custom draft, including its seat selection.
+        compose.onNodeWithText("Settings").performScrollTo().performClick()
+        compose.onNodeWithText("Seats & colors").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Top right, empty").assertExists()
+        compose.onNodeWithContentDescription("Player-1, Blue").performScrollTo().assertIsSelected()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithText("Quick setup").performClick()
+        compose.onNodeWithText("2 players").assertIsSelected()
+    }
+
     @Test fun localGameOpensAndRollSettlesWithoutAuthentication() {
         compose.runOnIdle { compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
         compose.waitUntil(5_000) {
@@ -21,9 +55,9 @@ class OfflineTabletopTest {
             compose.onAllNodesWithText("New game").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("New game").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("Quick game").assertIsSelected()
         compose.onNodeWithText("2 players").assertIsSelected()
-        compose.onNodeWithText("Two people, opposite corners.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Top left, playing").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Bottom right, playing").assertIsDisplayed()
         compose.onNodeWithText("Heuristic").assertDoesNotExist()
         compose.onNodeWithText("Start game").performClick()
         compose.onNodeWithContentDescription("Roll dice").assertIsDisplayed().performClick()
@@ -43,7 +77,10 @@ class OfflineTabletopTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithContentDescription("Ludo board.", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Motion").performScrollTo().performClick()
         compose.onNodeWithText("Reduced motion").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithText("Play assistance").assertExists()
         pressBack()
         compose.onNodeWithText("Game Feedback").assertDoesNotExist()
         compose.onNodeWithText("Quit Game?").assertDoesNotExist()

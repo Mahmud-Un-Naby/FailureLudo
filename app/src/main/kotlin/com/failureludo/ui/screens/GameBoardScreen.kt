@@ -28,10 +28,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.failureludo.ui.tabletop.*
-import androidx.compose.ui.draw.alpha
 import com.failureludo.ui.theme.gardenBackground
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -42,8 +42,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.failureludo.R
-import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
@@ -64,8 +62,6 @@ internal data class BoardLayoutSizing(
 )
 
 
-private const val PAWN_STEP_MS = 130
-private const val CAPTURE_RETURN_STEP_MS = 35
 private const val CAPTURE_HOLD_MS = 160
 private const val CAPTURE_EFFECT_MS = 440
 
@@ -124,9 +120,10 @@ fun GameBoardScreen(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val feedbackManager = remember(context) {
-        GameFeedbackManager(context, soundPrefix = "tabletop_",
-            soundOverrides = mapOf(FeedbackEvent.CAPTURE to R.raw.sfx_capture))
+        GameFeedbackManager(context)
     }
+
+    LaunchedEffect(feedbackManager, feedbackSettings) { feedbackManager.prepare(feedbackSettings) }
 
     DisposableEffect(feedbackManager) {
         onDispose {
@@ -154,7 +151,7 @@ fun GameBoardScreen(
     var pendingStackChoice by remember { mutableStateOf<StackMoveChoiceState?>(null) }
 
     val animationFromCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
-    val movementProgress = remember { Animatable(1f) }
+    var movementProgress by remember { mutableFloatStateOf(1f) }
     val captureProgress = remember { Animatable(1f) }
     var captureCells by remember { mutableStateOf<List<Pair<Int, Int>>>(emptyList()) }
     var previousEventSize by remember { mutableIntStateOf(gameState.eventLog.size) }
@@ -208,6 +205,7 @@ fun GameBoardScreen(
         if (animatedPieceCells.isNotEmpty()) animatedPieceCells else firstFrameAnimationCells
 
     LaunchedEffect(gameState.players, gameState.moveCounter) {
+        val pawnTiming = PawnAnimationTiming(latestFeedbackSettings)
         val currentPositions = extractPiecePositions(gameState)
         val previousPositions = previousPiecePositions
         val isForwardMove = previousMoveCounter >= 0L && gameState.moveCounter > previousMoveCounter
@@ -217,38 +215,43 @@ fun GameBoardScreen(
                 try {
                     coroutineScope {
                         animatedPieceCells.clear()
-                        val maxSteps = precomputedAnimationPaths.maxOf { (_, cells) -> cells.size }
-                        for (stepIndex in 0 until maxSteps) {
-                            animationFromCells.clear()
+                        val lastStep = precomputedAnimationPaths.maxOf { (_, cells) -> cells.lastIndex }
+                        val forwardLastStep = (movingPieceStepCount - 1).coerceAtLeast(0)
+                        fun renderFrame(step: Int, progress: Float) {
                             precomputedAnimationPaths.forEach { (key, cells) ->
-                                animationFromCells[key] = cells.getOrNull((stepIndex - 1).coerceAtLeast(0)) ?: cells.last()
-                                animatedPieceCells[key] = cells.getOrNull(stepIndex) ?: cells.last()
+                                animationFromCells[key] = cells.getOrElse((step - 1).coerceAtLeast(0)) { cells.last() }
+                                animatedPieceCells[key] = cells.getOrElse(step) { cells.last() }
                             }
-                            if (stepIndex > 0) {
-                                movementProgress.snapTo(0f)
-                                movementProgress.animateTo(1f, tween(
-                                    durationMillis = if (latestFeedbackSettings.reducedMotion) 1 else
-                                        if (hasCaptureDuringAnimation && stepIndex >= movingPieceStepCount)
-                                            CAPTURE_RETURN_STEP_MS else PAWN_STEP_MS,
-                                    easing = LinearEasing))
+                            movementProgress = progress
+                        }
+                        suspend fun animatePath(first: Int, last: Int, onLanding: (Int) -> Unit = {}) {
+                            animatePawnPath(
+                                firstStep = first, lastStep = last,
+                                stepDurationMillis = pawnTiming.stepDurationMillis(precomputedAnimationPlan, first, false),
+                                reducedMotion = latestFeedbackSettings.reducedMotion,
+                                onFrame = { renderFrame(it.stepIndex, it.progress) },
+                                onLanding = onLanding
+                            )
+                        }
+                        renderFrame(0, 1f)
+                        animatePath(1, forwardLastStep) { step ->
+                            val landingCapture = hasCaptureDuringAnimation && step == forwardLastStep
+                            feedbackManager.emitSound(
+                                if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
+                                latestFeedbackSettings)
+                        }
+                        if (hasCaptureDuringAnimation && forwardLastStep > 0) {
+                            if (latestFeedbackSettings.hapticsEnabled) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
-                            if (stepIndex in 1 until movingPieceStepCount) {
-                                val landingCapture = hasCaptureDuringAnimation && stepIndex == movingPieceStepCount - 1
-                                feedbackManager.emitSound(if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
-                                    latestFeedbackSettings)
-                                if (landingCapture) {
-                                    if (latestFeedbackSettings.hapticsEnabled) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-                                    if (!latestFeedbackSettings.reducedMotion) {
-                                        captureCells = precomputedAnimationPlan.capturedKeys.mapNotNull { animatedPieceCells[it] }
-                                        captureProgress.snapTo(0f)
-                                        launch { captureProgress.animateTo(1f, tween(CAPTURE_EFFECT_MS, easing = LinearEasing)) }
-                                        kotlinx.coroutines.delay(CAPTURE_HOLD_MS.toLong())
-                                    }
-                                }
+                            if (!latestFeedbackSettings.reducedMotion) {
+                                captureCells = precomputedAnimationPlan.capturedKeys.mapNotNull { animatedPieceCells[it] }
+                                captureProgress.snapTo(0f)
+                                launch { captureProgress.animateTo(1f, tween(CAPTURE_EFFECT_MS, easing = LinearEasing)) }
+                                kotlinx.coroutines.delay(CAPTURE_HOLD_MS.toLong())
                             }
                         }
+                        animatePath(forwardLastStep + 1, lastStep)
                     }
                     kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 1 else 90)
                 } finally {
@@ -420,6 +423,9 @@ fun GameBoardScreen(
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             },
+            onPreviewSound = { event, optionId ->
+                feedbackManager.previewSound(event, optionId, feedbackSettings)
+            },
             onDismiss = { showFeedbackDialog = false }
         )
     }
@@ -436,23 +442,24 @@ fun GameBoardScreen(
             titleContentColor = Color(0xFF352440),
             textContentColor = Color(0xFF55455D),
             onDismissRequest = { viewModel.dismissHomeEntryChoice() },
-            title = { Text("Choose your route", fontWeight = FontWeight.Bold) },
+            title = { Text("Which way?", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("This move can enter the finishing path. Choose how this pawn should continue.")
+                Column(Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
                     HomeEntryOptionPreviewCard(
-                        title = "Enter Finish",
-                        description = "Turn into home column and progress toward the center.",
+                        title = "Enter finish",
+                        description = "Toward the center",
+                        identity = pendingHomeEntryChoicePiece!!.color.ordinal,
                         tint = previewTint,
                         enterHomePath = true,
                         onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = true) }
                     )
 
                     HomeEntryOptionPreviewCard(
-                        title = "Keep Circulating",
-                        description = if (canCirculate) "Stay on the main track for another full round."
-                            else "Blocked by a pair or the three-pawn limit.",
+                        title = "Go around",
+                        description = if (canCirculate) "One more lap" else "Blocked",
+                        identity = pendingHomeEntryChoicePiece!!.color.ordinal,
                         enabled = canCirculate,
                         tint = previewTint,
                         enterHomePath = false,
@@ -474,39 +481,37 @@ fun GameBoardScreen(
             title = { Text("Choose your pawn", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Select which move to play from this stack.")
                     choiceState.options.forEach { option ->
+                        val owners = option.previewColors.joinToString(" and ") { color ->
+                            gameState.players.firstOrNull { it.color == color }?.name
+                                ?: "Player-${color.ordinal + 1}"
+                        }
                         Surface(
+                            onClick = {
+                                pendingStackChoice = null
+                                viewModel.selectPiece(option.piece)
+                            },
                             shape = RoundedCornerShape(12.dp),
-                            color = option.tint.copy(alpha = 0.15f),
+                            color = Color.White,
                             tonalElevation = 1.dp,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().semantics {
+                                contentDescription = "${option.label}: $owners"
+                            }
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.Center
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clip(CircleShape)
-                                            .background(option.tint)
-                                    )
-                                    Text(option.label, style = MaterialTheme.typography.bodyLarge)
-                                }
-                                TextButton(
-                                    onClick = {
-                                        pendingStackChoice = null
-                                        viewModel.selectPiece(option.piece)
+                                option.previewColors.forEach { color ->
+                                    val tint = playerColor(color, setup.playerColors)
+                                    Canvas(Modifier.size(48.dp)) {
+                                        drawPawn(center, size.minDimension * .40f, tint,
+                                            selectable = false, lift = 0f, identity = color.ordinal)
                                     }
-                                ) { Text("Play") }
+                                }
                             }
                         }
                     }
@@ -619,7 +624,7 @@ fun GameBoardScreen(
                         pieces=gameState.players.filter { it.isActive }.associate { it.color to it.pieces },
                         movable=movableSet, palette=setup.playerColors,
                         animatedCells=renderedAnimatedCells, fromCells=animationFromCells,
-                        progress=movementProgress.value, reducedMotion=feedbackSettings.reducedMotion,
+                        progress=movementProgress, reducedMotion=feedbackSettings.reducedMotion,
                         capturedKeys=precomputedAnimationPlan.capturedKeys,
                         captureCells=captureCells, captureProgress=captureProgress.value,
                         onTap={ tapped ->
@@ -641,7 +646,7 @@ fun GameBoardScreen(
 internal data class StackMoveOption(
     val label: String,
     val piece: Piece,
-    val tint: Color
+    val previewColors: List<PlayerColor>
 )
 
 private data class StackMoveChoiceState(
@@ -724,29 +729,15 @@ internal fun resolveStackTapDecision(tapped: TappedCellPieces, mode: GameMode): 
         return StackTapDecision(autoPiece = chooseRepresentative(groupedChoices.values.first()))
     }
 
-    val singleOptionColors = groupedChoices.keys
-        .filter { it.type == StackMoveMeaningType.SINGLE }
-        .flatMap { it.colors }
-        .toSet()
-    val shouldUseColorLabelsForSingles = singleOptionColors.size > 1
-
     val options = groupedChoices.map { (meaning, candidates) ->
-        val representative = chooseRepresentative(candidates)
-        val label = when (meaning.type) {
-            StackMoveMeaningType.PAIR -> "Move pair"
-            StackMoveMeaningType.SINGLE -> {
-                if (shouldUseColorLabelsForSingles) {
-                    "Move ${representative.color.displayName}"
-                } else {
-                    "Move single"
-                }
-            }
-        }
-
         StackMoveOption(
-            label = label,
-            piece = representative,
-            tint = playerColor(representative.color)
+            label = if (meaning.type == StackMoveMeaningType.PAIR) "Move pair" else "Move single",
+            piece = chooseRepresentative(candidates),
+            previewColors = if (meaning.type == StackMoveMeaningType.PAIR) {
+                pairRefs.map { it.color }.sortedBy { it.ordinal }
+            } else {
+                listOf(candidates.first().color)
+            }
         )
     }
 
@@ -839,6 +830,7 @@ internal fun buildAnimationPlan(
 private fun HomeEntryOptionPreviewCard(
     title: String,
     description: String,
+    identity: Int,
     tint: Color,
     enterHomePath: Boolean,
     onClick: () -> Unit,
@@ -848,7 +840,6 @@ private fun HomeEntryOptionPreviewCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(if (enabled) 1f else .48f)
             .clip(RoundedCornerShape(20.dp))
             .clickable(
                 enabled = enabled,
@@ -856,7 +847,12 @@ private fun HomeEntryOptionPreviewCard(
                 onClickLabel = title,
                 onClick = onClick
             )
-            .background(if (enabled) tint.copy(alpha = 0.12f) else Color(0xFFE1DDE2))
+            .semantics(mergeDescendants = true) {
+                if (!enabled) {
+                    contentDescription = "$title. Blocked by a pair or the three-pawn limit."
+                }
+            }
+            .background(if (enabled) Color.White else Color(0xFFE1DDE2))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -864,17 +860,18 @@ private fun HomeEntryOptionPreviewCard(
         HomeEntryPathMiniPreview(
             tint = if (enabled) tint else Color.Gray,
             enterHomePath = enterHomePath,
+            identity = identity,
             modifier = Modifier
-                .width(76.dp)
-                .height(42.dp)
+                .width(100.dp)
+                .height(84.dp)
         )
 
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = if (enabled) tint.copy(alpha = 0.95f) else Color.DarkGray
+                color = Color(0xFF352440)
             )
             Text(
                 text = description,
@@ -889,59 +886,66 @@ private fun HomeEntryOptionPreviewCard(
 private fun HomeEntryPathMiniPreview(
     tint: Color,
     enterHomePath: Boolean,
+    identity: Int,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
-        val lineWidth = size.minDimension * 0.14f
-        val baseY = size.height * 0.72f
-        val start = Offset(size.width * 0.10f, baseY)
+        val left = size.width * .18f
+        val right = size.width * .84f
+        val top = size.height * .16f
+        val bottom = size.height * .78f
+        val middle = size.width * .51f
+        val finish = Offset(middle, size.height * .43f)
+        val start = Offset(left, bottom)
+        val turn = Offset(middle, bottom)
+        val trackWidth = size.minDimension * .13f
+        val ink = Color(0xFF55455D)
 
-        if (enterHomePath) {
-            val laneTurn = Offset(size.width * 0.58f, baseY)
-            val finish = Offset(laneTurn.x, size.height * 0.20f)
-
-            drawLine(
-                color = tint.copy(alpha = 0.85f),
-                start = start,
-                end = laneTurn,
-                strokeWidth = lineWidth,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = tint.copy(alpha = 0.85f),
-                start = laneTurn,
-                end = finish,
-                strokeWidth = lineWidth,
-                cap = StrokeCap.Round
-            )
-
-            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = start)
-            drawCircle(color = tint.copy(alpha = 0.98f), radius = lineWidth * 0.58f, center = finish)
-            drawCircle(color = Color.White.copy(alpha = 0.9f), radius = lineWidth * 0.22f, center = finish)
-        } else {
-            val end = Offset(size.width * 0.90f, baseY)
-
-            drawLine(
-                color = tint.copy(alpha = 0.85f),
-                start = start,
-                end = end,
-                strokeWidth = lineWidth,
-                cap = StrokeCap.Round
-            )
-
-            drawArc(
-                color = tint.copy(alpha = 0.72f),
-                startAngle = 210f,
-                sweepAngle = 290f,
-                useCenter = false,
-                topLeft = Offset(size.width * 0.52f, size.height * 0.18f),
-                size = Size(size.width * 0.34f, size.height * 0.50f),
-                style = Stroke(width = lineWidth * 0.7f, cap = StrokeCap.Round)
-            )
-
-            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = start)
-            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = end)
+        // Both choices share the same track and center so the fork is easy to compare.
+        val track = Path().apply {
+            moveTo(left, bottom)
+            lineTo(right, bottom)
+            lineTo(right, top)
+            lineTo(left, top)
+            close()
         }
+        drawPath(track, Color(0xFFE8E2EB), style = Stroke(trackWidth))
+        drawLine(tint.copy(alpha = .25f), turn, finish, trackWidth)
+        val centerDiamond = Path().apply {
+            val radius = size.minDimension * .12f
+            moveTo(finish.x, finish.y - radius)
+            lineTo(finish.x + radius, finish.y)
+            lineTo(finish.x, finish.y + radius)
+            lineTo(finish.x - radius, finish.y)
+            close()
+        }
+        drawPath(centerDiamond, tint)
+        drawPath(centerDiamond, ink, style = Stroke(1.dp.toPx()))
+
+        val route = if (enterHomePath) {
+            listOf(start, turn, Offset(middle, finish.y + trackWidth))
+        } else {
+            listOf(start, Offset(right, bottom), Offset(right, top), Offset(left + trackWidth, top))
+        }
+        route.zipWithNext().forEach { (from, to) ->
+            drawLine(ink, from, to, 3.dp.toPx(), StrokeCap.Round)
+        }
+        val end = route.last()
+        val previous = route[route.lastIndex - 1]
+        val direction = (end - previous) / (end - previous).getDistance()
+        val perpendicular = Offset(-direction.y, direction.x)
+        val arrowSize = 6.dp.toPx()
+        val arrow = Path().apply {
+            moveTo(end.x, end.y)
+            val wingA = end - direction * arrowSize + perpendicular * arrowSize * .65f
+            val wingB = end - direction * arrowSize - perpendicular * arrowSize * .65f
+            lineTo(wingA.x, wingA.y)
+            lineTo(wingB.x, wingB.y)
+            close()
+        }
+        drawPath(arrow, ink)
+        drawPawn(start, size.minDimension * .17f, tint,
+            selectable = false, lift = 0f, identity = identity)
     }
 }
 
@@ -1167,104 +1171,4 @@ private fun ReplayControlsRow(
             )
         }
     }
-}
-
-@Composable
-private fun FeedbackSettingsDialog(
-    settings: FeedbackSettings,
-    onSettingsChange: (FeedbackSettings) -> Unit,
-    onTestCaptureSound: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        shape = RoundedCornerShape(28.dp),
-        containerColor = Color(0xFFFFF8FC),
-        onDismissRequest = onDismiss,
-        title = { Text("Game Feedback") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Sound effects")
-                    Switch(
-                        checked = settings.soundEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(soundEnabled = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Reduced motion")
-                    Switch(
-                        checked = settings.reducedMotion,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(reducedMotion = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Haptics")
-                    Switch(
-                        checked = settings.hapticsEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(hapticsEnabled = enabled))
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Auto-select single move")
-                    Switch(
-                        checked = settings.singleMoveAssistEnabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(singleMoveAssistEnabled = enabled))
-                        }
-                    )
-                }
-
-                Text("Master volume: ${(settings.masterVolume * 100f).toInt()}%")
-                Slider(
-                    value = settings.masterVolume,
-                    onValueChange = { value ->
-                        onSettingsChange(settings.copy(masterVolume = value.coerceIn(0f, 1f)))
-                    },
-                    valueRange = 0f..1f
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    OutlinedButton(
-                        onClick = onTestCaptureSound,
-                        enabled = settings.soundEnabled
-                    ) {
-                        Text("Test capture sound")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done")
-            }
-        }
-    )
 }

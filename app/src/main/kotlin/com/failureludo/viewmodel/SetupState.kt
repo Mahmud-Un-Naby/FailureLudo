@@ -44,15 +44,24 @@ fun defaultPlayerColors(): Map<PlayerColor, Color> = mapOf(
 )
 
 /** A fresh familiar game, independent of saved custom preferences. */
-fun quickGameSetup(playerCount: Int = 2): SetupState {
+fun quickGameSetup(playerCount: Int = 2, vsComputer: Boolean = false): SetupState {
     require(playerCount in 2..4)
     val seats = when (playerCount) {
         2 -> listOf(PlayerColor.RED, PlayerColor.YELLOW)
         3 -> listOf(PlayerColor.RED, PlayerColor.BLUE, PlayerColor.YELLOW)
         else -> PlayerColor.entries.toList()
     }
-    return SetupState(activeColors = seats, playerNames = defaultPlayerNames() +
-        seats.mapIndexed { index, seat -> seat to "Player-${index + 1}" }.toMap())
+    return SetupState(
+        activeColors = seats,
+        playerTypes = PlayerColor.entries.associateWith { seat ->
+            if (vsComputer && seat != seats.first() && seat in seats) PlayerType.BOT else PlayerType.HUMAN
+        },
+        playerNames = defaultPlayerNames() + seats.mapIndexed { index, seat ->
+            seat to if (!vsComputer) "Player-${index + 1}"
+                else if (index == 0) "You"
+                else if (playerCount == 2) "Computer" else "Computer $index"
+        }.toMap()
+    )
 }
 
 /** Keep the paused experimental policy out of new games, including Play again. */

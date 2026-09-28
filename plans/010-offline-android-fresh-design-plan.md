@@ -436,3 +436,232 @@ This supersedes earlier setup recommendations that exposed bot-policy selection.
 Validation: all 75 app unit tests pass, including quick-setup/legacy-preference coverage.
 The debug APK builds and updated offline navigation instrumentation tests compile; device tests
 were not run. Device visual review remains necessary for compact screens, landscape and large text.
+
+
+## Tester feedback — less reading before play (September 25)
+
+- Keep English for now; Bangla support is deferred. Use “Single” and “Team”.
+- New game opens directly to player count and a four-corner preview. More options
+  opens custom controls on the same page, carrying over the chosen player count;
+  Quick setup returns to fresh person-only presets. Team setup labels matching pairs.
+  Short labels, player symbols and wrapping controls replace longer explanations.
+- Custom colors update player cards, offer 48 dp selectable targets with spoken color
+  names and checkmarks, and include the exact default colors. Single seat choices
+  survive switching to Team and back.
+- Home has a shorter Resume action with player names, and empty history is supporting
+  text. Buttons can grow with text size.
+- Validation: app unit tests, debug APK and instrumentation compilation are checked
+  for this change. Added device regression coverage for mode switching and default
+  color selection; device execution and visual review remain pending.
+
+
+## September 25 follow-up — pre-game usability
+
+The user approved interface previews, then narrowed implementation to pages before
+play. This supersedes the proposed gameplay/status, exit-dialog, and victory changes:
+the board, gameplay controls, exit prompt, and victory screen remain unchanged.
+
+- Home always exposes Saved games, including on a fresh installation, and offers
+  optional Rules and Settings dialogs. Home settings use the existing persisted
+  feedback preferences and tabletop sound preview without changing the board UI.
+- New game offers Pass & play or Vs computer with 2–4 total players. Computer
+  presets start with one human and one to three regular computer opponents; More
+  options carries the preset into the existing custom setup controls.
+- Saved games has an empty-state Import action, player-name titles, a single Replay
+  action for finished games, and Export/Delete in each record's menu. Delete requires
+  confirmation identifying the selected game; Cancel and dismiss preserve it.
+- Verification: app unit tests, debug APK, and instrumentation compilation are run
+  for this change. Added computer-preset tests and pre-game UI regression coverage
+  for empty-history import access and delete cancellation/confirmation. Device
+  execution and visual review remain with the user.
+
+
+## September 27 follow-up — visual stack move choices
+
+- Stack move options now show tappable pawn samples in the customized player colors,
+  using the board renderer and identity symbols instead of default color names/dots.
+- Single moves show one pawn; locked pairs show both pawns, including mixed team colors.
+  Spoken option descriptions use player names. Selection behavior is preserved.
+- Validation: app unit tests and debug APK build pass. Regression assertions cover
+  teammate single choices and same-color/mixed-color pair previews. Device visual
+  and accessibility review remain with the user.
+
+## September 27 follow-up — simpler route prompt
+
+- Route choices now ask “Which way?” with “Enter finish / Toward the center” and
+  “Go around / One more lap”. Larger matching diagrams show the customized pawn,
+  center, shared track and directional arrows. Text keeps a fixed dark color for
+  readability with arbitrary pawn colors; the options scroll on short screens.
+- Illegal circulation stays disabled and grey with a short “Blocked” label and
+  the existing full reason available to screen readers. Move rules are unchanged.
+- Validation: Android compilation and debug APK build passed. Device visual and
+  accessibility review remain pending.
+
+
+## September 28 follow-up — advanced sound choices
+
+- Home and in-game Settings now share an Advanced settings page with per-category lists,
+  previews, and reset. Choices persist independently of new-game setup and apply to all games.
+- Each current sound is an ordinary catalog option marked as the category default; playback
+  keeps the same resources, gain, pitch variation, and gameplay event timing. No audio assets
+  were replaced or added, and unused audition assets remain recoverable.
+- Stable sound/category IDs are stored in the existing local preferences. Missing, obsolete,
+  or wrong-category selections fall back to the category default. Playback preloads selected
+  assets and loads preview options on demand rather than preloading the whole future catalog.
+- Adding options requires a bundled resource and catalog entry; the picker and persistence
+  discover entries automatically. See [sound extension guidance](../design/audio/README.md).
+- Validation: all 84 app unit tests passed; debug APK build and UI-test compilation passed via
+  `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline --console=plain`.
+  Device execution and listening review remain with the user. Review Settings → Advanced
+  settings from home and gameplay, previews with mute/volume, reset, and persistence after restart.
+
+
+## September 28 follow-up — recorded wooden sound alternatives
+
+- Added Wooden tumble (new dice default) and Light wooden roll from Wuzzy's CC0 wooden-die
+  recordings, plus optional Wooden tap for pawn movement and Wooden double knock for captures
+  from Aidan_Walker's CC0 board-piece recordings. All original options and stable IDs remain.
+- Trimmed/filtered real recordings retain the existing cue timing; dice/pawn mixer gains are
+  approximately matched to previous RMS levels. Four app WAVs total 73,822 bytes. Original source
+  recordings, exact URLs, licenses, checksums, and repeatable preparation are retained under
+  [audio sources](../design/audio/README.md).
+- New/default preferences and Reset sound choices use Wooden tumble. Existing saved original
+  dice choices are preserved; choose Wooden tumble in Advanced settings to switch. Other
+  categories keep their existing defaults.
+- Validation: all 87 app unit tests passed; debug APK build and UI-test compilation passed.
+  WAV checks passed for mono 22,050 Hz / 16-bit PCM, duration, endpoint fades, and peak headroom.
+  Device UI execution and subjective phone/headphone listening are still for user review.
+
+
+## September 28 follow-up — snake hiss and capture skull
+
+- Added Snake hiss as an optional capture sound in Advanced settings. The default remains faaah;
+  existing saved selections are preserved. The 600 ms cue is prepared from Reitanna's CC0 hiss
+  preview; source, license, exact download URL, hash, and preparation script are retained in
+  [audio documentation](../design/audio/README.md).
+- A native Canvas skull with crossbones pops up, rises, and fades over the collision square on
+  the existing 440 ms capture-effect clock. It shares capture impact timing with the selected
+  sound and echo rings, is disabled by reduced motion, and does not participate in pawn taps.
+  Capture rules, return paths, animation cancellation, and input gating are unchanged.
+- Validation: all 89 app unit tests (including capture sequencing, saved sound choices, and
+  defaults) passed; debug APK build passed. Hiss WAV format, duration, fades, and headroom checked.
+  Device visual/listening checks remain with the user: select Snake hiss, capture a pawn or pair,
+  and review the skull timing plus muted/reduced-motion behavior.
+
+
+## September 28 follow-up — adjustable pawn speeds
+
+- Home and in-game Settings share separate Forward speed and Backward speed sliders,
+  from 0.5× to 4× in 0.25× increments, plus Reset pawn speeds. Backward means the
+  captured pawn's return to base. Both default to 1×, retaining the existing 130 ms
+  forward / 35 ms return steps until tester feedback establishes new defaults.
+- Preferences persist locally across sessions and games; each slider saves on release.
+  Missing values use defaults; non-finite values fall back and out-of-range values clamp.
+  Speed settings are presentation preferences, independent of rules, saves, and history.
+- Each move snapshots its speeds. Collision landing uses forward speed; capture returns
+  use backward speed. Reduced motion still overrides step timing and disables the sliders
+  while retaining their values. Reset affects only the two speed preferences.
+- Existing completion-based input locks, bot turn handoff, replay autoplay, and sound
+  sequencing remain in use. Dice, bot thinking delays, capture effects/hold, and final
+  settling delay retain their timing; these controls adjust pawn travel only. Actual
+  animation durations are subject to display frame rate, especially fast return steps.
+- Validation: all 101 app unit tests passed, debug APK built, and UI tests compiled via
+  `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline --console=plain`.
+  Coverage includes preference round trips, independent speeds, invalid values, capture
+  paths/contact timing, reduced motion, and the full speed range. UI tests are compiled,
+  not device-executed. The existing unrelated TabletopGameLayout edit is preserved.
+- Device review remains with the user: adjust each speed from home and during a game,
+  restart to check persistence, try long captures and pairs at both extremes, review
+  bot/replay sequencing and sound, then reset. Collect forward/backward values separately
+  with tester feedback before choosing new defaults.
+
+
+## Follow-up — slow pawn movement at default and maximum speed
+
+- User reports that both the default and maximum slider settings feel slower than the
+  previous game. Phone lag has not been reproduced locally; changing defaults alone
+  is not treated as proof of a fix. The earlier supplied APK was a debug build, which
+  also makes comparisons with an optimized published release inconclusive.
+- Replaced the per-square snap/animate loop with one continuous clock for forward
+  travel and one for capture return. Cell and hop progress derive from the phase's
+  position, so missed frames catch up instead of accumulating waits at every square.
+  Captures still wait for attacker contact and the impact hold; cleanup, turn gating,
+  replay completion, and rules remain in their existing paths.
+- Both default multipliers are now 2×. The sliders span 1×–6× in 0.5× increments;
+  they no longer offer speeds below the original timing. Existing valid saved values
+  survive; old values below 1× clamp to 1×. Use Reset pawn speeds to adopt 2× on an
+  installation with saved preferences. Reduced motion completes each whole phase
+  with minimal animation rather than waiting a frame for every cell.
+- Validation: 111 app unit tests passed; debug APK build and UI-test compilation
+  passed. Tests run the actual animation function with deterministic 16, 33, and
+  80 ms frame clocks, verify long-path completion and contact boundaries, and compare
+  2×/6× to the previous per-cell runner. These are timing regressions, not device FPS
+  measurements. Device UI execution and performance review remain with the user.
+- Normal optimized release APK built with `:app:assembleRelease --offline`; release
+  lint and upload-key validation passed. APK signature and non-debuggable manifest
+  verified. Artifact: `app/build/outputs/apk/release/app-release.apk`. Nothing published;
+  app version remains 1.0.9 / code 13, so a new Play upload still needs version review.
+
+
+## September 28 follow-up — settings pages and board preview
+
+Plan, requested and implemented: keep quick creation focused on opponent type and player
+count; move custom game choices into a shared settings hub; split preferences into focused
+pages with summaries and sound previews. Subsequent user feedback replaces symbolic seating
+tiles with an actual board preview and replaces the pale setup background with artwork.
+
+- New game → Settings exposes **This game**: Players & teams (names, Person/Computer,
+  Single/Team), and Seats & colors (2–4 seats, one player's palette at a time, color swaps,
+  reset). Custom edits update the creation summary; opening settings alone leaves the quick
+  preset intact. Closing/reopening preserves the draft. Quick setup returns to the chosen
+  fresh preset. Team mode preserves Single seat selections, as before.
+- **All games** appears from setup, home and gameplay: Sound, Motion, Play assistance.
+  Sound has master volume, one picker per event, individual previews/default restoration,
+  and a global sound-choice reset. Muted/zero-volume previews are disabled. Motion keeps
+  independent forward/return speeds, reduced motion and reset. Assistance contains haptics
+  and automatic single-move selection. Existing preference storage and playback are retained.
+- The shared settings window has a bounded tablet width, scrolling pages, retained page
+  scroll state, system/toolbar back navigation to the parent, close/done actions, keyboard
+  insets and accessible full-row toggles. Controls save through the existing stores.
+- Setup and settings use a bundled [illustrated walnut and plum-felt background](../design/settings/README.md),
+  opaque dark control surfaces and gold selection emphasis. Status/navigation icon contrast
+  follows the dark surfaces. Artwork details and the exact generation prompt are recorded.
+- Preview reuses `TabletopBoard` with the current palette and four home pawns per active seat.
+  Empty corners have dark panels and explicit labels; the preview does not rely on identity
+  symbols or faint grey on white. Names/opponent/team labels sit below the board. Preview
+  does not animate or handle pawn input. Gameplay board rendering and rules are unchanged.
+- Validation: all 111 app unit tests passed; debug APK build and Android UI-test compilation
+  passed with `:app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --offline`.
+  APK: `app/build/outputs/apk/debug/app-debug.apk`. Existing UI checks follow the new pages
+  and cover custom draft reopening, selected colors, teams, sound
+  selection/defaults/mute, speed independence and back navigation. Device execution, visual
+  review at large text/landscape, and listening review remain with the user.
+
+
+## Follow-up — extend pawn speed below the original pace
+
+- Per user feedback, Settings → Motion now offers independent forward/backward speeds
+  from 0.25× to 6× in 0.25× increments. The 2× default and existing saved selections
+  remain; the page explains that values below 1× are slower than the original pace.
+- Timing uses the existing continuous animation. Updated regression checks cover the
+  full range, saved sub-1× values, independent controls, reset, and reduced motion.
+- All 111 app unit tests passed and Android UI tests compiled. Device UI execution
+  and play-speed review remain with the user.
+- Normal signed release APK built successfully; release lint and APK signature checks
+  passed. Artifact: `app/build/outputs/apk/release/app-release.apk`. Nothing published.
+
+
+## Follow-up — independent sound category volumes
+
+- Settings → Sound → each category now has a saved 0–100% volume slider. Category
+  summaries show the saved percentage; 0% mutes only that category. Master volume
+  scales every category, and gameplay and previews use the same combined level.
+- Existing installations default all eight categories to 100%, preserving prior
+  playback levels and sound choices. Reset category volumes restores those levels
+  while retaining master volume and selected sounds. Sound-choice reset retains volumes.
+- Validation: all 114 app unit tests passed, Android UI tests compiled, and the debug
+  APK built with `:app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:assembleDebug --offline`.
+  Coverage includes independent persistence, defaults, master scaling, mute/reset,
+  invalid stored values, and a compiled UI check for category adjustment and previews.
+  APK: `app/build/outputs/apk/debug/app-debug.apk`. Device UI execution and listening
+  review remain with the user.

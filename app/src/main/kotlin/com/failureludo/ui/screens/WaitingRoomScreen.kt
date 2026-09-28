@@ -1,6 +1,7 @@
 package com.failureludo.ui.screens
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +54,7 @@ fun WaitingRoomScreen(
     val clipboard = LocalClipboardManager.current
 
     LaunchedEffect(roomId) { viewModel.init(roomId) }
+    BackHandler { viewModel.leaveRoom(onBack) }
 
     LaunchedEffect(state) {
         if (state is WaitingRoomState.GameStarting) {
@@ -71,7 +73,7 @@ fun WaitingRoomScreen(
             TopAppBar(
                 title = { Text("Waiting Room") },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.leaveRoom(); onBack() }) {
+                    IconButton(onClick = { viewModel.leaveRoom(onBack) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Leave")
                     }
                 },

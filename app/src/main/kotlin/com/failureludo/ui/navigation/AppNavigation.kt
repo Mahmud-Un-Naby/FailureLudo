@@ -1,6 +1,9 @@
 package com.failureludo.ui.navigation
 
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.failureludo.ui.screens.RulesDialog
+import com.failureludo.ui.screens.HomeSettingsDialog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -13,15 +16,25 @@ import com.failureludo.ui.screens.HistoryScreen
 import com.failureludo.ui.screens.HomeScreen
 import com.failureludo.ui.screens.WinScreen
 import com.failureludo.viewmodel.GameViewModel
+import com.failureludo.BuildConfig
+import com.failureludo.ui.screens.AuthScreen
+import com.failureludo.ui.screens.OnlineLobbyScreen
+import com.failureludo.ui.screens.WaitingRoomScreen
+import com.failureludo.ui.screens.OnlineGameBoardScreen
+import com.failureludo.viewmodel.AuthState
+import com.failureludo.viewmodel.AuthViewModel
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
     val gameViewModel: GameViewModel = viewModel()
     val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
-    val historyRecords by gameViewModel.historyRecords.collectAsState()
+    var showRules by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    if (showRules) RulesDialog { showRules = false }
+    if (showSettings) HomeSettingsDialog(gameViewModel) { showSettings = false }
 
+    val gameState by gameViewModel.gameState.collectAsState()
     val hasActiveGame = gameViewModel.hasActiveGame
-    val hasHistoryRecords = historyRecords.isNotEmpty()
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
 
@@ -31,9 +44,64 @@ fun AppNavigation(navController: NavHostController) {
                 onResume      = { navController.navigate(Screen.Game.route) },
                 onHistory     = { navController.navigate(Screen.History.route) },
                 hasActiveGame     = hasActiveGame,
-                hasHistoryRecords = hasHistoryRecords,
-                isSessionRestored = isSessionRestored
+                onRules = { showRules = true },
+                onSettings = { showSettings = true },
+                onPlayOnline = if (BuildConfig.DEBUG) {
+                    { navController.navigate(Screen.Auth.route) }
+                } else null,
+                isSessionRestored = isSessionRestored,
+                resumeSummary = gameState?.players?.filter { it.isActive }?.joinToString(" · ") { it.name }.orEmpty()
             )
+        }
+
+        // Firebase-backed ViewModels belong to online destinations so local play
+        // never waits for an authenticated session.
+        if (BuildConfig.DEBUG) {
+            composable(Screen.Auth.route) {
+                val authViewModel: AuthViewModel = viewModel()
+                val authState by authViewModel.authState.collectAsState()
+                LaunchedEffect(authState) {
+                    if (authState is AuthState.SignedIn) {
+                        navController.navigate(Screen.OnlineLobby.route) {
+                            popUpTo(Screen.Auth.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+                AuthScreen(authViewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable(Screen.OnlineLobby.route) {
+                OnlineLobbyScreen(
+                    viewModel = viewModel(),
+                    onBack = { navController.popBackStack() },
+                    onRoomReady = { navController.navigate(Screen.WaitingRoom.route(it.id)) }
+                )
+            }
+
+            composable(Screen.WaitingRoom.route) { entry ->
+                val roomId = requireNotNull(entry.arguments?.getString("roomId"))
+                WaitingRoomScreen(
+                    roomId = roomId,
+                    viewModel = viewModel(),
+                    onGameStarting = {
+                        navController.navigate(Screen.OnlineGame.route(it)) {
+                            popUpTo(Screen.OnlineLobby.route)
+                        }
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.OnlineGame.route) { entry ->
+                val roomId = requireNotNull(entry.arguments?.getString("roomId"))
+                OnlineGameBoardScreen(
+                    roomId = roomId,
+                    viewModel = viewModel(),
+                    onGameOver = { navController.popBackStack(Screen.OnlineLobby.route, false) },
+                    onQuit = { navController.popBackStack(Screen.OnlineLobby.route, false) }
+                )
+            }
         }
 
         composable(Screen.History.route) {
