@@ -12,7 +12,8 @@ import java.util.logging.Logger
 
 fun interface TokenVerifier { fun verify(token: String): String }
 
-class ApiHandler(private val controller: GameController, private val tokens: TokenVerifier) : HttpHandler {
+class ApiHandler(private val controller: GameController, private val tokens: TokenVerifier,
+                 private val nowMillis: () -> Long = System::currentTimeMillis) : HttpHandler {
     override fun handle(exchange: HttpExchange) {
         try {
             val path = exchange.requestURI.path
@@ -55,6 +56,8 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
                         "START" -> { body.only(*common); Command.Start }
                         "LEAVE" -> { body.only(*common); Command.Leave }
                         "RESIGN" -> { body.only(*common); Command.Resign }
+                        "CHECK_TIMEOUT" -> { body.only(*common); Command.CheckTimeout }
+                        "RETURN" -> { body.only(*common); Command.Return }
                         "ROLL" -> { body.only(*common); Command.Roll }
                         "MOVE" -> {
                             body.only(*common, "playerId", "pieceId", "deferHomeEntry")
@@ -120,7 +123,7 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
         .put("duplicate", result.duplicate)
 
     private fun respond(exchange: HttpExchange, status: Int, json: JSONObject) {
-        val bytes = json.toString().toByteArray(Charsets.UTF_8)
+        val bytes = json.put("serverTimeMillis", nowMillis()).toString().toByteArray(Charsets.UTF_8)
         exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
         exchange.responseHeaders.set("Cache-Control", "no-store")
         exchange.sendResponseHeaders(status, bytes.size.toLong())

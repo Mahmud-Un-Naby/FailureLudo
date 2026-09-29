@@ -25,7 +25,8 @@ fun TabletopGameLayout(
     state: GameState, palette: Map<PlayerColor, Color>, diceValue: Int?, rollId: Long,
     rolling: Boolean, reducedMotion: Boolean, canRoll: Boolean, inputBlocked: Boolean,
     onRoll: () -> Unit, board: @Composable (Modifier) -> Unit, modifier: Modifier = Modifier,
-    statusOverride: String? = null
+    statusOverride: String? = null,
+    showAvatars: Boolean = false, actionCountdown: AvatarCountdown? = null
 ) {
     val status = statusOverride ?: when {
         rolling -> "Rolling…"
@@ -45,7 +46,8 @@ fun TabletopGameLayout(
             value = if (active) diceValue else null,
             rollId = if (active) rollId else 0L, rolling = active && rolling,
             reducedMotion = reducedMotion, enabled = active && canRoll, onRoll = onRoll,
-            modifier = modifier)
+            modifier = modifier, showAvatar = showAvatars,
+            countdown = actionCountdown?.takeIf { it.color == color })
     }
     @Composable fun Status(modifier: Modifier = Modifier) {
         Text("${state.currentPlayer.name} · $status", modifier = modifier,
@@ -115,7 +117,8 @@ fun TabletopGameLayout(
 private fun CornerPlayer(
     player: Player?, color: PlayerColor, active: Boolean, tint: Color, mode: GameMode,
     value: Int?, rollId: Long, rolling: Boolean, reducedMotion: Boolean,
-    enabled: Boolean, onRoll: () -> Unit, modifier: Modifier = Modifier
+    enabled: Boolean, onRoll: () -> Unit, modifier: Modifier = Modifier,
+    showAvatar: Boolean = false, countdown: AvatarCountdown? = null
 ) {
     val occupied = player?.isActive == true
     val right = color == PlayerColor.BLUE || color == PlayerColor.YELLOW
@@ -131,18 +134,22 @@ private fun CornerPlayer(
             }
         }
         if (!right) Die()
-        Column(Modifier.weight(1f).background(TabletopStyle.Panel.copy(alpha = .85f), shape)
+        Row(Modifier.weight(1f).background(TabletopStyle.Panel.copy(alpha = .85f), shape)
             .border(1.dp, if (active) tint else tint.copy(alpha = .24f), shape)
-            .padding(horizontal = 8.dp, vertical = 7.dp)) {
-            Text(if (occupied) player!!.name else "Empty seat", color = if (occupied) TabletopStyle.Paper else TabletopStyle.Muted,
-                fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val detail = if (!occupied) "—" else buildString {
-                append(if (active) "Playing" else if (player!!.type == PlayerType.BOT) "Bot" else "Human")
-                append(" · ${player!!.finishedPieceCount}/4")
-                if (mode == GameMode.TEAM) append(" · T${color.teamIndex + 1}")
+            .padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(if (showAvatar) 4.dp else 0.dp)) {
+            if (showAvatar && occupied) PlayerAvatar(player!!.name, tint, countdown, reducedMotion)
+            Column(Modifier.weight(1f)) {
+                Text(if (occupied) player!!.name else "Empty seat", color = if (occupied) TabletopStyle.Paper else TabletopStyle.Muted,
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val detail = if (!occupied) "—" else buildString {
+                    append(if (active) "Playing" else if (player!!.type == PlayerType.BOT) "Bot" else "Human")
+                    append(" · ${player!!.finishedPieceCount}/4")
+                    if (mode == GameMode.TEAM) append(" · T${color.teamIndex + 1}")
+                }
+                Text(detail, color = if (active) tint else TabletopStyle.Muted, fontSize = 10.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text(detail, color = if (active) tint else TabletopStyle.Muted, fontSize = 10.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (right) Die()
     }

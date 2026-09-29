@@ -24,15 +24,21 @@ import java.util.Locale
 data class OnlineSessionState(
     val room: OnlineRoom? = null, val uid: String? = null, val busy: Boolean = false,
     val pending: Boolean = false, val connected: Boolean = false, val error: String? = null,
-    val configured: Boolean = BuildConfig.ONLINE_API_URL.isNotBlank()
+    val configured: Boolean = BuildConfig.ONLINE_API_URL.isNotBlank(),
+    val actionRemainingMillis: Long? = null,
+    val afkRemainingMillis: Long? = null,
+    val deadlineDue: Boolean = false
 ) {
     val canAct: Boolean get() = configured && connected && !busy && !pending && error == null
+    val canPlay: Boolean get() = canAct && !deadlineDue && (room?.actionDeadlineAtMillis == null ||
+        actionRemainingMillis?.let { it > 0 } == true)
 }
 
 class OnlineGameRepository private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutex = Mutex()
-    private val api = OnlineApi(BuildConfig.ONLINE_API_URL)
+    private val deadlineClock = OnlineDeadlineClock(android.os.SystemClock::elapsedRealtime)
+    private val api = OnlineApi(BuildConfig.ONLINE_API_URL, deadlineClock::observe)
     private val file = AtomicFile(File(context.noBackupFilesDir, "online-session-v1.json"))
     private var journal: OnlineCommandJournal? = null
     private val mutable = MutableStateFlow(OnlineSessionState())
@@ -40,11 +46,70 @@ class OnlineGameRepository private constructor(context: Context) {
     private var watcher: Job? = null
     private var watchedCode: String? = null
     private var clients = 0
+    private var deadlineWatcher: Job? = null
 
-    fun attach() { clients++; if (clients == 1) retry() }
+    private fun watchDeadline() {
+        if (deadlineWatcher?.isActive == true) return
+        deadlineWatcher = scope.launch {
+            var nextCheck = 0L
+            var observed: Pair<String, Long>? = null
+            while (isActive) {
+                val room = mutable.value.room
+                val identity = room?.let { it.code to it.revision }
+                if (identity != observed) { observed = identity; nextCheck = 0L }
+                updateTimers()
+                val remaining = deadlineClock.remainingMillis(room?.nextDeadlineAtMillis())
+                val elapsed = android.os.SystemClock.elapsedRealtime()
+                if (room?.status == RoomStatus.PLAYING && room.nextDeadlineAtMillis() != null &&
+                    (remaining == null || remaining == 0L) && !mutable.value.busy && elapsed >= nextCheck) {
+                    nextCheck = elapsed + 15_000
+                    checkDeadline()
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun updateTimers() {
+        mutable.update { session ->
+            val room = session.room
+            val member = room?.members?.find { it.uid == session.uid }
+            val afkDeadline = member?.afkSinceMillis?.let { start -> room.afkTimeoutMillis?.let { start + it } }
+            session.copy(actionRemainingMillis = deadlineClock.remainingMillis(room?.actionDeadlineAtMillis),
+                afkRemainingMillis = if (room?.status == RoomStatus.PLAYING) deadlineClock.remainingMillis(afkDeadline) else null,
+                deadlineDue = deadlineClock.remainingMillis(room?.nextDeadlineAtMillis()) == 0L)
+        }
+    }
+
+    private fun checkDeadline() = launchOperation {
+        // Recover the original intention first. A lost response must never become
+        // a new timeout intention while that original receipt remains unresolved.
+        if (journal!!.state!!.pending != null) sendPending()
+        val room = journal!!.state!!.room ?: return@launchOperation
+        if (room.status != RoomStatus.PLAYING || room.actionDeadlineAtMillis == null) return@launchOperation
+        if (deadlineClock.remainingMillis(room.nextDeadlineAtMillis()) == null) {
+            refresh(room.code)
+            return@launchOperation
+        }
+        if (deadlineClock.remainingMillis(room.nextDeadlineAtMillis()) != 0L) return@launchOperation
+        try {
+            send("/v1/rooms/${room.code}/commands", JSONObject().put("type", "CHECK_TIMEOUT")
+                .put("expectedRevision", room.revision))
+        } catch (error: OnlineApiException) {
+            // Another device may have resolved the deadline first, or clock/network
+            // error may have made this check early. sendPending refreshes these cases.
+            if (error.code !in listOf("TIME_REMAINING", "STALE_REVISION", "NOT_PLAYING")) throw error
+        }
+    }
+
+    fun attach() { clients++; if (clients == 1) { watchDeadline(); retry() } }
     fun detach() {
         clients = (clients - 1).coerceAtLeast(0)
-        if (clients == 0) { watcher?.cancel(); watcher = null; watchedCode = null; mutable.update { it.copy(connected = false) } }
+        if (clients == 0) {
+            watcher?.cancel(); watcher = null; watchedCode = null
+            deadlineWatcher?.cancel(); deadlineWatcher = null
+            mutable.update { it.copy(connected = false) }
+        }
     }
 
     fun retry() = launchOperation {
@@ -71,7 +136,7 @@ class OnlineGameRepository private constructor(context: Context) {
     fun command(type: String, fields: JSONObject = JSONObject()) {
         val clicked = state.value
         val room = clicked.room ?: return
-        if (!clicked.canAct) return
+        if (!clicked.canAct || (type in listOf("ROLL", "MOVE") && !clicked.canPlay)) return
         // Freeze the revision that the player actually saw. A listener may advance
         // the journal while identity/disk work suspends; never retarget that tap.
         val body = JSONObject(fields.toString()).put("type", type).put("expectedRevision", room.revision)
@@ -160,7 +225,7 @@ class OnlineGameRepository private constructor(context: Context) {
             }
             mutable.update { it.copy(connected = true, error = null) }
         } catch (error: OnlineApiException) {
-            if (error.code == "STALE_REVISION" || error.code == "ALREADY_STARTED") {
+            if (error.code in listOf("STALE_REVISION", "ALREADY_STARTED", "TURN_EXPIRED", "TIME_REMAINING", "NOT_PLAYING", "AFK_EXPIRED", "ALREADY_ACTIVE")) {
                 journal!!.state!!.room?.let { refresh(it.code) }
             }
             throw error
@@ -186,6 +251,7 @@ class OnlineGameRepository private constructor(context: Context) {
     private fun publish() {
         val saved = journal?.state ?: return
         mutable.update { it.copy(room = saved.room, pending = saved.pending != null) }
+        updateTimers()
     }
 
     private fun ensureWatcher() {

@@ -18,13 +18,14 @@ import java.util.UUID
 class ApiHandlerTest {
     private lateinit var server: HttpServer
     private val client = HttpClient.newHttpClient()
+    private var now = 1_000_000L
     private fun id() = UUID.randomUUID().toString()
     @Before fun start() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/", ApiHandler(GameController(MemoryRoomStore(), { 6 }, { "ABCDEFGH" }), TokenVerifier {
+        server.createContext("/", ApiHandler(GameController(MemoryRoomStore(), { 6 }, { "ABCDEFGH" }, { now }), TokenVerifier {
             if (it !in listOf("host", "guest")) reject(401, "UNAUTHENTICATED", "Invalid test token")
             it
-        }))
+        }, { now }))
         server.start()
     }
     @After fun stop() { server.stop(0) }
@@ -91,6 +92,29 @@ class ApiHandlerTest {
         assertTrue(JSONObject(request(path, body).body()).getBoolean("duplicate"))
     }
 
+    @Test fun `HTTP timeout uses server clock and never accepts caller time dice or target player`() {
+        assertEquals(200, request("/v1/rooms", createBody().toString()).statusCode())
+        val path = "/v1/rooms/ABCDEFGH/commands"
+        val join = JSONObject().put("requestId", id()).put("type", "JOIN").put("name", "Guest")
+        assertEquals(200, request(path, join.toString(), "guest").statusCode())
+        val started = request(path, command("START", 1).toString())
+        assertEquals(now, JSONObject(started.body()).getLong("serverTimeMillis"))
+        for (field in listOf("nowMillis", "dice", "uid", "afkSinceMillis")) {
+            assertEquals(400, request(path, command("CHECK_TIMEOUT", 2).put(field, 0).toString()).statusCode())
+        }
+        val early = request(path, command("CHECK_TIMEOUT", 2).toString(), "guest")
+        assertEquals(409, early.statusCode())
+        assertEquals("TIME_REMAINING", JSONObject(early.body()).getString("error"))
+        assertEquals(now, JSONObject(early.body()).getLong("serverTimeMillis"))
+        now += 10_000
+        val rolled = request(path, command("CHECK_TIMEOUT", 2).toString(), "guest")
+        assertEquals(200, rolled.statusCode())
+        assertEquals("BOT_ROLL", RoomCodec.decode(JSONObject(rolled.body()).getJSONObject("room")).lastAction!!.type)
+        val returned = request(path, command("RETURN", 3).toString())
+        assertEquals(200, returned.statusCode())
+        assertNull(RoomCodec.decode(JSONObject(returned.body()).getJSONObject("room")).members.first().afkSinceMillis)
+    }
+
     @Test fun `storage error causes stay internal to the server`() {
         val cause = IllegalStateException("private storage diagnostic")
         val failure = ApiException(503, "STORE_UNAVAILABLE", "Storage unavailable. Retry with the same request ID.", cause)
@@ -104,7 +128,7 @@ class ApiHandlerTest {
         val response = request("/v1/rooms/ABCDEFGH")
         assertEquals(503, response.statusCode())
         val body = JSONObject(response.body())
-        assertEquals(setOf("error", "message"), body.keySet())
+        assertEquals(setOf("error", "message", "serverTimeMillis"), body.keySet())
         assertEquals("STORE_UNAVAILABLE", body.getString("error"))
         assertEquals(failure.message, body.getString("message"))
         assertFalse(response.body().contains("private storage diagnostic"))

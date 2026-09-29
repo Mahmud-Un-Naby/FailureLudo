@@ -55,10 +55,30 @@ class RoomCodecTest {
         val decoded = RoomCodec.decode(json)
         assertEquals(room, decoded)
         val upgraded = RoomCodec.encode(decoded)
-        assertEquals(2, upgraded.getInt("protocolVersion"))
+        assertEquals(PROTOCOL_VERSION, upgraded.getInt("protocolVersion"))
         assertEquals(RULES_VERSION, upgraded.getString("rulesVersion"))
         assertFalse(upgraded.getJSONArray("members").getJSONObject(0).getBoolean("resigned"))
         assertThrows(UnsupportedRoomVersion::class.java) { RoomCodec.decode(json.put("rulesVersion", RULES_VERSION)) }
+    }
+
+    @Test fun `AFK state and deadlines survive codec while v2 rooms remain untimed`() {
+        val room = OnlineRoom("ABCDEFGH", "host", 2, GameMode.FREE_FOR_ALL,
+            listOf(Member("host", "Host", PlayerColor.RED, afkSinceMillis = 100_000),
+                Member("guest", "Guest", PlayerColor.BLUE)), status = RoomStatus.PLAYING,
+            actionTimeoutMillis = 10_000, actionDeadlineAtMillis = 230_000, afkTimeoutMillis = 120_000)
+        val decoded = RoomCodec.decode(RoomCodec.encode(room))
+        assertEquals(room, decoded)
+        assertEquals(220_000L, decoded.nextDeadlineAtMillis())
+        assertNull(decoded.copy(status = RoomStatus.FINISHED).nextDeadlineAtMillis())
+        val old = RoomCodec.encode(room.copy(members = room.members.map { it.copy(resigned = true) }))
+            .put("protocolVersion", 2).put("rulesVersion", "2026-09-29")
+        old.remove("actionTimeoutMillis"); old.remove("actionDeadlineAtMillis"); old.remove("afkTimeoutMillis")
+        for (i in 0 until old.getJSONArray("members").length()) old.getJSONArray("members").getJSONObject(i).remove("afkSinceMillis")
+        val legacy = RoomCodec.decode(old)
+        assertTrue(legacy.members.all { it.resigned })
+        assertTrue(legacy.members.all { it.afkSinceMillis == null })
+        assertNull(legacy.actionTimeoutMillis)
+        assertNull(legacy.nextDeadlineAtMillis())
     }
 
     @Test fun `unsupported protocol and rules fail closed`() {

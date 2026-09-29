@@ -144,6 +144,29 @@ class OnlineCommandJournalTest {
         assertEquals(pending, journal().state!!.pending)
     }
 
+    @Test fun `automatic check survives lost response and never replaces the pending command`() = runBlocking {
+        val first = journal()
+        first.accept(room())
+        val pending = first.begin("/v1/rooms/ABCDEFGH/commands",
+            JSONObject().put("type", "CHECK_TIMEOUT").put("expectedRevision", 2))
+        try { deliverPending(first) { throw IOException("Lost bot response") } } catch (_: IOException) { }
+        val restored = journal()
+        assertEquals(pending, restored.state!!.pending)
+        assertThrows(IllegalStateException::class.java) { roll(restored) }
+        val confirmed = room(3).copy(status = RoomStatus.PLAYING,
+            members = room().members.map { it.copy(afkSinceMillis = 100_000) },
+            actionTimeoutMillis = 10_000, actionDeadlineAtMillis = 120_000, afkTimeoutMillis = 120_000,
+            lastAction = LastAction("BOT_ROLL", "guest", 6))
+        deliverPending(restored) { request ->
+            assertEquals(pending, request)
+            JSONObject().put("room", RoomCodec.encode(confirmed))
+        }
+        assertEquals(confirmed, journal().state!!.room)
+        assertNull(journal().state!!.pending)
+        assertThrows(IllegalStateException::class.java) { restored.forgetRoom() }
+        Unit
+    }
+
     @Test fun `corrupt recovery data is surfaced instead of silently discarding a pending move`() {
         storage.raw = "{broken"
         assertThrows(Exception::class.java) { journal() }

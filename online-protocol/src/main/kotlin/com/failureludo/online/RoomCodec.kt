@@ -10,17 +10,22 @@ object RoomCodec {
         .put("protocolVersion", PROTOCOL_VERSION).put("rulesVersion", RULES_VERSION)
         .put("code", room.code).put("hostUid", room.hostUid).put("maxPlayers", room.maxPlayers)
         .put("mode", room.mode.name).put("revision", room.revision).put("status", room.status.name)
+        .put("actionTimeoutMillis", room.actionTimeoutMillis ?: JSONObject.NULL)
+        .put("actionDeadlineAtMillis", room.actionDeadlineAtMillis ?: JSONObject.NULL)
+        .put("afkTimeoutMillis", room.afkTimeoutMillis ?: JSONObject.NULL)
         .put("members", JSONArray(room.members.map { JSONObject()
-            .put("uid", it.uid).put("name", it.name).put("color", it.color.name).put("resigned", it.resigned) }))
+            .put("uid", it.uid).put("name", it.name).put("color", it.color.name).put("resigned", it.resigned).put("afkSinceMillis", it.afkSinceMillis ?: JSONObject.NULL) }))
         .put("game", room.game?.let(::gameStateToJson) ?: JSONObject.NULL)
         .put("lastAction", room.lastAction?.let { JSONObject().put("type", it.type)
             .put("uid", it.uid).put("dice", it.dice ?: JSONObject.NULL).put("eventCount", it.eventCount) } ?: JSONObject.NULL)
 
     fun decode(json: JSONObject): OnlineRoom {
-        // Read pre-resignation snapshots for stored-room and Android journal upgrades.
-        // All new writes use v2 so older clients fail closed on controller handoff.
+        // Older matches remain untimed. Never impose a retroactive deadline on a
+        // saved turn or discard an Android journal's pending request during upgrade.
         val legacy = json.getInt("protocolVersion") == 1 && json.getString("rulesVersion") == "2026-09-23"
-        if (!legacy && (json.getInt("protocolVersion") != PROTOCOL_VERSION || json.getString("rulesVersion") != RULES_VERSION)) {
+        val resignationVersion = json.getInt("protocolVersion") == 2 && json.getString("rulesVersion") == "2026-09-29"
+        val current = json.getInt("protocolVersion") == PROTOCOL_VERSION && json.getString("rulesVersion") == RULES_VERSION
+        if (!legacy && !resignationVersion && !current) {
             throw UnsupportedRoomVersion()
         }
         return OnlineRoom(
@@ -28,8 +33,15 @@ object RoomCodec {
             maxPlayers = json.getInt("maxPlayers"), mode = GameMode.valueOf(json.getString("mode")),
             members = json.getJSONArray("members").toObjectList {
                 Member(it.getString("uid"), it.getString("name"), PlayerColor.valueOf(it.getString("color")),
-                    resigned = if (legacy) false else it.getBoolean("resigned"))
+                    resigned = if (legacy) false else it.getBoolean("resigned"),
+                    afkSinceMillis = if (!current || it.isNull("afkSinceMillis")) null else it.getLong("afkSinceMillis").also { start -> require(start > 0) })
             }, revision = json.getLong("revision"), status = RoomStatus.valueOf(json.getString("status")),
+            actionTimeoutMillis = if (!current || json.isNull("actionTimeoutMillis")) null else
+                json.getLong("actionTimeoutMillis").also { require(it > 0) },
+            afkTimeoutMillis = if (!current || json.isNull("afkTimeoutMillis")) null else
+                json.getLong("afkTimeoutMillis").also { require(it > 0) },
+            actionDeadlineAtMillis = if (!current || json.isNull("actionDeadlineAtMillis")) null else
+                json.getLong("actionDeadlineAtMillis").also { require(it > 0) },
             game = if (json.isNull("game")) null else gameStateFromJson(json.getJSONObject("game")),
             lastAction = if (json.isNull("lastAction")) null else json.getJSONObject("lastAction").let {
                 LastAction(it.getString("type"), it.getString("uid"), if (it.isNull("dice")) null else it.getInt("dice"),

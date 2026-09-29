@@ -8,7 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Never follows redirects with a bearer token. Only the build-configured HTTPS origin is used. */
-internal class OnlineApi(private val origin: String) {
+internal class OnlineApi(private val origin: String, private val onServerTime: (Long) -> Unit = {}) {
     suspend fun request(path: String, token: String, body: String? = null): JSONObject = withContext(Dispatchers.IO) {
         require(origin.startsWith("https://") && path.startsWith("/v1/rooms"))
         val connection = URL(origin + path).openConnection() as HttpURLConnection
@@ -40,6 +40,7 @@ internal class OnlineApi(private val origin: String) {
                 output.toString()
             }.orEmpty()
             val json = runCatching { JSONObject(text) }.getOrNull()
+            json?.optLong("serverTimeMillis", 0)?.takeIf { it > 0 }?.let(onServerTime)
             if (status !in 200..299) throw OnlineApiException(status,
                 json?.optString("error") ?: "HTTP_ERROR",
                 json?.optString("message")?.takeIf { it.isNotBlank() }

@@ -32,6 +32,9 @@ fun WaitingRoomScreen(roomId: String, viewModel: WaitingRoomViewModel, onGameSta
             if (room != null) {
                 Text(room.code, style = MaterialTheme.typography.headlineLarge)
                 Text(if (room.mode == GameMode.TEAM) "Team game" else "Free for all")
+                room.actionTimeoutMillis?.let {
+                    Text("${it / 1000} seconds per roll or pawn choice. A bot covers missed actions; two minutes AFK forfeits your seat.")
+                }
                 Button(onClick = {
                     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join my Failure Ludo room: ${room.code}")

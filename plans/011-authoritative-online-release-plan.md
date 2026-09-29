@@ -35,8 +35,8 @@ start promptly but must not permanently advance an unconfirmed game.
    - Disable legacy client-write collections as part of coordinated migration.
 3. **Complete multiplayer lifecycle and operations**
    - Waiting-room leave/host transfer and active-game resignation/team handoff are
-     implemented. Specify and implement disconnect grace periods, deadlines and
-     abandoned-room cleanup, with regression coverage.
+     implemented, along with per-action bot assistance and AFK forfeiture. Implement
+     abandoned-room cleanup and production operations with regression coverage.
    - Add durable action history/replay and rules-version rollout/migration policy.
    - Set quotas/rate limits, abuse controls for guests, receipt retention, monitoring,
      least-privilege service identity, dependency/container maintenance and cost limits.
@@ -58,8 +58,8 @@ with exactly the same command. Its atomic receipt prevents duplicate moves or re
 Mutating existing games requires the confirmed revision; join checks current room
 capacity inside the transaction without exposing the room to nonmembers first.
 
-Room snapshots carry protocol and rules versions. Known v1 snapshots upgrade to v2
-with no resigned members; unsupported version pairs fail closed. The server accepts human free-for-all and four-seat team games through the
+Room snapshots carry protocol and rules versions. Known v1/v2 snapshots upgrade to v3
+without retroactive timers; unsupported version pairs fail closed. The server accepts human free-for-all and four-seat team games through the
 existing engine. Recent UI events are bounded; they are not a permanent game archive.
 Each accepted operation updates one room revision. A duplicate returns the latest
 snapshot plus the original accepted revision, so clients must apply revisions monotonically.
@@ -220,3 +220,52 @@ Docker image predates this increment; rebuild it from the updated distribution b
 Next: disconnect grace periods/turn deadlines, abandoned-room cleanup, abuse/rate limits
 and durable online history. Real Firebase identity and release/device checks remain open.
 No backend/rules deployment or app publication occurred.
+
+## Ten-second actions, AFK assistance and avatar countdown — 29 September 2026
+
+User decisions: allow 10 seconds separately for each roll and pawn choice, including
+bonus rolls; use a bot only for each missed action; keep a two-minute continuous AFK
+limit. Add a visible countdown over the player profile, similar in function to Ludo Club.
+
+Implemented:
+- New rooms persist a 10-second action policy and two-minute AFK policy. The server
+  evaluates time inside each transaction attempt and refuses client timestamps, dice
+  and target identities. Each accepted roll/move resets the next action window.
+- `CHECK_TIMEOUT` performs one server bot action using the existing engine/heuristic
+  selector after an action deadline. The human gets the next action window. AFK begins
+  at the start of the first missed action window; bot actions do not reset it. At two
+  minutes the seat forfeits using the existing FFA/team handoff rules, even if another
+  player currently has time left. Lost responses reuse the same request receipt.
+- A human roll/move or explicit `RETURN` ("I'm back") clears AFK before the two-minute
+  deadline. Returning during one's own controlled turn preserves dice/pawns and gives
+  a fresh 10-second window; returning during another turn does not extend that timer.
+- Android schedules checks from server-time samples and elapsed real time (including
+  device sleep), recovers pending intentions first and backs off after failed checks.
+  There is no continuously running backend timer: if all apps close, checks resume when
+  someone returns. No unobserved bot turns are replayed to catch up.
+- Online guest profile initials have a shrinking countdown ring. It resets for each
+  action, turns amber/red near expiry, follows the active color during team takeover,
+  exposes remaining seconds to accessibility and uses discrete updates with reduced
+  motion. Text shows action/AFK status and bot assistance. Offline callers retain the
+  default layout without online avatars/timers.
+- Protocol 3 / rules `2026-09-29-afk` persists deadlines and member AFK start times.
+  Known v1/v2 snapshots remain readable and untimed; journals retain pending request IDs.
+  Older app/server versions reject v3, so rollout must be coordinated.
+
+Verification: 49 server unit tests, five Firestore integration tests and 128 Android
+tests passed (182 total). Coverage includes exact boundaries, fresh bonus-roll timers,
+human return, no early forfeiture, AFK expiry between turns, team takeover, concurrent
+checks, bot receipt recovery after restart, codec upgrades and countdown synchronization.
+The new Android recovery test initially had a JUnit return-type error; it was corrected
+and the complete final verification passed. Debug and signed/minified release APKs
+built; upload-key verification and release vital lint passed. The server distribution
+built and the emulator shut down cleanly. Engine code was unchanged in this increment.
+Device/visual/audio, real Firebase authentication and two-device tests were not run.
+
+Artifacts: `app/build/outputs/apk/debug/app-debug.apk` and
+`app/build/outputs/apk/release/app-release.apk`. Both still have no backend URL, so live
+online play is unavailable until an authorized backend is configured/deployed. Rebuild
+the older local Docker image from the updated distribution before using it.
+
+Remaining: abandoned-room cleanup, rate/abuse limits, durable online history, production
+operations and real-device/release checks. No backend/rules deployment or publication.

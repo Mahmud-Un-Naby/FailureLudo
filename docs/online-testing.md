@@ -19,15 +19,15 @@ Kotlin backend. `online-protocol` shares the room model and snapshot codec with 
 Android no longer writes move logs or chooses online dice. Confirmed snapshots drive
 the shared tabletop board, corner dice, movement/capture animation and feedback settings.
 Both free-for-all and four-player team rooms are supported. Offline saves, bots,
-undo/redo and history remain local; online history and automatic disconnect handling
-are still outstanding. Active-game resignation is implemented in the update below.
+undo/redo and history remain local; durable online history is still outstanding.
+Resignation, per-action bot assistance and AFK forfeiture are implemented below.
 
 Pending commands and the active room are saved atomically in app-private no-backup
 storage, bound to Firebase UID and service origin. Retrying preserves the request ID,
 including after process death. Older HTTP responses cannot replace newer confirmed
 snapshots. Token refresh, stale revisions, live-listener reconnection and waiting-room
 host transfer are handled explicitly. Returning from an active game keeps the seat for
-resume; it does not resign or resolve a disconnected player's turn.
+resume. New timed rooms continue their action/AFK timers while the player is away.
 
 Build with `-PonlineApiUrl=https://YOUR-SERVICE.run.app` after an authorized backend
 configuration/deployment. The URL must be an HTTPS origin. The current APKs were built
@@ -64,6 +64,29 @@ for validation and remaining release work.
 Validation: 79 engine, 33 server, four emulator integration and 124 Android tests passed.
 Debug and signed/minified release APKs built with upload-key verification and vital lint.
 Both builds still have no service URL; live online play and device review remain open.
+
+## Action timer, bot assistance and AFK — 29 September 2026
+
+New rooms allow 10 seconds per roll and a separate 10 seconds per pawn choice, including
+bonus rolls. A missed action is performed once by the server bot, then the human gets
+the next action window. Two minutes of continued AFK forfeits the seat, with teammate
+handoff as above. A human action or "I'm back" clears AFK before that limit. Existing
+v1/v2 rooms remain untimed; protocol 3 / rules `2026-09-29-afk` persists the new policy.
+
+The online guest avatar shows a shrinking countdown ring, changing to amber/red near
+expiry. Text also shows remaining action/AFK time. Timers use server time and the device's
+elapsed real time; reduced motion uses discrete ring updates. Guest profiles currently
+use initials. The server alone confirms bot actions and forfeits, with durable retries.
+
+An open Android online session requests deadline checks. If everyone closes the app,
+there is no running background game loop: overdue checks happen when someone returns.
+Abandoned-room cleanup, rate limits, durable history and real two-device/release review
+remain open. No cloud deployment or publication is included.
+
+Verified: 49 server tests, five Firestore emulator integration tests and 128 Android
+tests passed. Debug and signed/minified release APKs built with upload-key verification
+and vital lint. The emulator shut down cleanly. Device visual/audio review is still
+needed, and neither APK has a live service URL configured.
 
 ## Historical branch handoff — 28 September 2026
 

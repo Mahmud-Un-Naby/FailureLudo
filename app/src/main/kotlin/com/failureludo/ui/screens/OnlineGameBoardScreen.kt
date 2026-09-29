@@ -60,10 +60,10 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
                 val consecutive = previous != null && next.revision == previous.revision + 1
                 presented = next
                 if (!consecutive) return@collect
-                actingColor = if (next.lastAction?.type in listOf("ROLL", "MOVE")) previous!!.game!!.currentPlayer.color else null
+                actingColor = if (next.lastAction?.type in listOf("ROLL", "MOVE", "BOT_ROLL", "BOT_MOVE")) previous!!.game!!.currentPlayer.color else null
                 animating = true
                 try {
-                    if (next.lastAction?.type == "ROLL") {
+                    if (next.lastAction?.type in listOf("ROLL", "BOT_ROLL")) {
                         rolling = true
                         feedback.emitSound(FeedbackEvent.DICE_ROLL, currentSettings)
                         delay(if (currentSettings.reducedMotion) 100 else 640)
@@ -117,7 +117,7 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
     val myTurn = game != null && room.controllerUid(game.currentPlayer.color) == session.uid
     val resigned = room?.hasResigned(session.uid) == true
     val canResign = session.canAct && caughtUp && !animating && latest?.canResign(session.uid) == true
-    val controls = session.canAct && caughtUp && !animating && myTurn && game?.isGameOver == false
+    val controls = session.canPlay && caughtUp && !animating && myTurn && game?.isGameOver == false
     val movable = if (controls && game?.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION)
         game.movablePieces.map { it.color to it.id }.toSet() else emptySet()
     Column(Modifier.fillMaxSize().background(TabletopStyle.Ink).statusBarsPadding().navigationBarsPadding()) {
@@ -140,13 +140,50 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
             val turnText = when {
                 game.isGameOver -> "Game over"
                 !session.connected -> "Waiting for connection"
-                resigned -> "You resigned · watching ${game.currentPlayer.color.displayName}'s turn"
+                resigned -> "Seat forfeited · watching ${game.currentPlayer.color.displayName}'s turn"
                 myTurn -> "Your turn · ${game.currentPlayer.color.displayName}"
                 else -> "Waiting for ${controller?.name ?: game.currentPlayer.name} · ${game.currentPlayer.color.displayName}"
             }
             Text(turnText,
                 color = TabletopStyle.Muted, modifier = Modifier.padding(horizontal = 16.dp))
-            TabletopGameLayout(state = display, palette = palette,
+            if (!game.isGameOver && room.actionDeadlineAtMillis != null) {
+                val remaining = session.actionRemainingMillis
+                val timerText = when {
+                    !session.connected -> "Reconnect to take over from the bot"
+                    remaining == null -> "Syncing action timer…"
+                    remaining == 0L -> "Time elapsed · waiting for the bot"
+                    else -> {
+                        val seconds = (remaining + 999) / 1000
+                        "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')} to ${if (game.turnPhase == TurnPhase.WAITING_FOR_ROLL) "roll" else "choose a pawn"}"
+                    }
+                }
+                Text(timerText, color = TabletopStyle.Muted, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            val me = room.members.find { it.uid == session.uid }
+            if (!game.isGameOver && me?.afkSinceMillis != null && !me.resigned) {
+                val seconds = session.afkRemainingMillis?.let { (it + 999) / 1000 }
+                Text(if (seconds != null) "AFK · return within ${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')} to keep your seat"
+                    else "AFK · the bot is covering missed actions. Return to keep your seat.",
+                    color = TabletopStyle.Paper, modifier = Modifier.padding(horizontal = 16.dp))
+                TextButton(onClick = viewModel::returnToGame, enabled = session.canAct) { Text("I'm back") }
+            }
+            room.lastAction?.takeIf { it.type in listOf("BOT_ROLL", "BOT_MOVE") }?.let { action ->
+                val name = room.members.find { it.uid == action.uid }?.name ?: "Player"
+                Text("Bot covered ${if (action.type == "BOT_ROLL") "a roll" else "a move"} for $name",
+                    color = TabletopStyle.Muted, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            room.lastAction?.takeIf { it.type == "TIMEOUT" }?.let { action ->
+                val name = room.members.find { it.uid == action.uid }?.name ?: "Player"
+                Text("$name lost their seat after two minutes AFK", color = TabletopStyle.Muted, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            val timerRoom = latest?.takeIf { session.connected && it.game?.isGameOver == false }
+            val countdown = timerRoom?.actionDeadlineAtMillis?.let { deadline ->
+                session.actionRemainingMillis?.let { remaining ->
+                    AvatarCountdown(timerRoom.game!!.currentPlayer.color, deadline, remaining,
+                        requireNotNull(timerRoom.actionTimeoutMillis))
+                }
+            }
+            TabletopGameLayout(state = display, palette = palette, showAvatars = true, actionCountdown = countdown,
                 diceValue = if (rolling) room.lastAction?.dice else game.diceByPlayer[game.currentPlayer.id],
                 rollId = room.revision, rolling = rolling, reducedMotion = settings.reducedMotion,
                 canRoll = controls && game.turnPhase == TurnPhase.WAITING_FOR_ROLL,
@@ -217,6 +254,7 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
     } else if (showExit) {
         AlertDialog(onDismissRequest = { showExit = false }, title = { Text("Return to lobby?") },
             text = { Text(if (resigned) "You can watch this game again or start a new room from the lobby."
+                else if (latest?.actionTimeoutMillis != null) "The bot covers each missed 10-second action. Your seat is forfeited after two minutes AFK. Return to play or use Resign to give up your seat now."
                 else "Your seat stays in this game. Resume it from the lobby; other players may wait for your turn. Use Resign to give up your seat.") },
             confirmButton = { TextButton(onClick = onQuit) { Text("Lobby") } },
             dismissButton = { TextButton(onClick = { showExit = false }) { Text("Stay") } })

@@ -42,8 +42,8 @@ class FirestoreIntegrationTest {
     @After fun close() { if (::db.isInitialized) db.close() }
 
     @Test fun `independent controllers serialize concurrent joins and rolls with durable receipts`() {
-        val first = GameController(FirestoreRoomStore(db), { 6 })
-        val second = GameController(FirestoreRoomStore(db), { 2 })
+        val first = GameController(FirestoreRoomStore(db), { 6 }, nowMillis = { 1_000_000L })
+        val second = GameController(FirestoreRoomStore(db), { 2 }, nowMillis = { 1_000_000L })
         var room = first.create("host", id(), "Host", 2, GameMode.FREE_FOR_ALL).room
         val code = room.code
         val pool = Executors.newFixedThreadPool(2)
@@ -121,7 +121,7 @@ class FirestoreIntegrationTest {
     }
 
     @Test fun `team resignation persists handoff and retries after another controller moves`() {
-        val api = GameController(FirestoreRoomStore(db), { 6 })
+        val api = GameController(FirestoreRoomStore(db), { 6 }, nowMillis = { 1_000_000L })
         var room = api.create("host", id(), "Host", 4, GameMode.TEAM).room
         val code = room.code
         for (i in 1..3) room = api.execute("guest$i", code, id(), null, Command.Join("Guest $i")).room
@@ -130,7 +130,7 @@ class FirestoreIntegrationTest {
         val revision = room.revision
         val request = id()
         val resigned = api.execute("host", code, request, revision, Command.Resign)
-        val restarted = GameController(FirestoreRoomStore(db), { fail("Must reuse the pending dice"); 1 })
+        val restarted = GameController(FirestoreRoomStore(db), { fail("Must reuse the pending dice"); 1 }, nowMillis = { 1_000_000L })
         room = restarted.get("guest2", code)
         assertTrue(room.hasResigned("host"))
         assertEquals("guest2", room.controllerUid(com.failureludo.engine.PlayerColor.RED))
@@ -144,6 +144,45 @@ class FirestoreIntegrationTest {
         assertTrue(retry.duplicate)
         assertEquals(resigned.acceptedRevision, retry.acceptedRevision)
         assertEquals(moved, retry.room)
+    }
+
+    @Test fun `concurrent bot checks persist one roll and AFK survives a new controller`() {
+        val clock = java.util.concurrent.atomic.AtomicLong(1_000_000L)
+        val first = GameController(FirestoreRoomStore(db), { 6 }, nowMillis = clock::get)
+        val second = GameController(FirestoreRoomStore(db), { 6 }, nowMillis = clock::get)
+        var room = first.create("host", id(), "Host", 2, GameMode.FREE_FOR_ALL).room
+        val code = room.code
+        room = first.execute("guest", code, id(), null, Command.Join("Guest")).room
+        room = first.execute("host", code, id(), room.revision, Command.Start).room
+        val initial = room
+        val request = id()
+        clock.addAndGet(10_000)
+        val pool = Executors.newFixedThreadPool(2)
+        val results = try {
+            pool.invokeAll(listOf(first, second).map { api -> Callable {
+                api.execute("guest", code, request, initial.revision, Command.CheckTimeout)
+            } }).map { it.get() }
+        } finally { pool.shutdownNow() }
+        assertEquals(1, results.count { it.duplicate })
+        assertEquals(results[0].room, results[1].room)
+        room = second.get("host", code)
+        assertEquals("BOT_ROLL", room.lastAction!!.type)
+        assertEquals(1_000_000L, room.members.first().afkSinceMillis)
+        assertEquals(1_020_000L, room.actionDeadlineAtMillis)
+        assertEquals(403, rest("PATCH", "authoritativeRooms/$code", "guest"))
+        val restarted = GameController(FirestoreRoomStore(db), { fail("Bot move must use persisted roll"); 1 }, nowMillis = clock::get)
+        clock.addAndGet(10_000)
+        room = restarted.execute("guest", code, id(), room.revision, Command.CheckTimeout).room
+        assertEquals("BOT_MOVE", room.lastAction!!.type)
+        assertEquals(1_000_000L, room.members.first().afkSinceMillis)
+        val retry = first.execute("guest", code, request, initial.revision, Command.CheckTimeout)
+        assertTrue(retry.duplicate)
+        assertEquals(initial.revision + 1, retry.acceptedRevision)
+        assertEquals(room, retry.room)
+        clock.set(1_120_000L)
+        room = restarted.execute("guest", code, id(), room.revision, Command.CheckTimeout).room
+        assertTrue(room.hasResigned("host"))
+        assertEquals(RoomStatus.FINISHED, room.status)
     }
 
     private fun rest(method: String, document: String, uid: String?): Int {

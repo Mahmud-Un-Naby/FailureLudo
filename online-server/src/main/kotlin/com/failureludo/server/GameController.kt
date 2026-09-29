@@ -11,7 +11,8 @@ import java.util.Locale
 class GameController(
     private val store: RoomStore,
     private val rollDie: () -> Int = { random.nextInt(6) + 1 },
-    private val newCode: () -> String = { (1..8).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("") }
+    private val newCode: () -> String = { (1..8).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("") },
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) {
     fun create(uid: String, requestId: String, name: String, maxPlayers: Int, mode: GameMode): CommandResult {
         val key = requestKey(uid, requestId)
@@ -25,7 +26,8 @@ class GameController(
             try {
                 return store.execute(key, fingerprint, code) { existing ->
                     if (existing != null) reject(409, "CODE_COLLISION", "Try creating the room again.")
-                    OnlineRoom(code, uid, maxPlayers, mode, listOf(Member(uid, displayName, PlayerColor.RED)))
+                    OnlineRoom(code, uid, maxPlayers, mode, listOf(Member(uid, displayName, PlayerColor.RED)),
+                        actionTimeoutMillis = DEFAULT_ACTION_TIMEOUT_MILLIS, afkTimeoutMillis = DEFAULT_AFK_TIMEOUT_MILLIS)
                 }.also { requireMember(it.room, uid) }
             } catch (error: ApiException) {
                 if (error.code != "CODE_COLLISION") throw error
@@ -58,23 +60,53 @@ class GameController(
             if (room.revision != expectedRevision) {
                 reject(409, "STALE_REVISION", "Reload the room before sending another action.")
             }
+            // Evaluate inside each transaction attempt so contention cannot admit an
+            // action using an earlier clock reading. Receipt retries skip this callback.
+            val now = nowMillis()
             when (normalized) {
-                Command.Resign -> {
+                Command.Resign -> resign(room, member, "RESIGN", now)
+                Command.CheckTimeout -> {
                     val game = room.game
                     if (room.status != RoomStatus.PLAYING || game == null) {
                         reject(409, "NOT_PLAYING", "This game is not in progress.")
                     }
-                    if (member.resigned) reject(409, "ALREADY_RESIGNED", "You already resigned. You can watch this game.")
-                    val members = room.members.map { if (it.uid == uid) it.copy(resigned = true) else it }
-                    val teammateContinues = room.mode == GameMode.TEAM && members.any {
-                        !it.resigned && it.color.teamIndex == member.color.teamIndex
+                    expiredMember(room, now)?.let { return@change resign(room, it, "TIMEOUT", now) }
+                    val deadline = room.actionDeadlineAtMillis
+                        ?: reject(409, "UNTIMED_GAME", "This game has no action deadline.")
+                    if (now < deadline) reject(409, "TIME_REMAINING", "The player still has time to act.")
+                    val actor = room.members.single { it.uid == room.controllerUid(game.currentPlayer.color) }
+                    val afkSince = actor.afkSinceMillis ?: (deadline - requireNotNull(room.actionTimeoutMillis))
+                    val automatic = when (game.turnPhase) {
+                        TurnPhase.WAITING_FOR_ROLL -> GameEngine.rollDice(game, dice).let {
+                            if (it.turnPhase == TurnPhase.NO_MOVES_AVAILABLE) GameEngine.advanceNoMoves(it) else it
+                        }
+                        TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
+                            val move = requireNotNull(HeuristicBotMoveSelector.chooseMove(game))
+                            GameEngine.selectPiece(game, move.piece, move.deferHomeEntry)
+                        }
+                        else -> error("Unexpected active online phase")
                     }
-                    val next = if (teammateContinues) game else
-                        GameEngine.forfeit(game, game.players.single { it.color == member.color }.id)
-                    room.copy(revision = room.revision + 1, members = members,
-                        status = if (next.isGameOver) RoomStatus.FINISHED else RoomStatus.PLAYING,
-                        game = next.copy(eventLog = next.eventLog.takeLast(32)),
-                        lastAction = LastAction("RESIGN", uid, eventCount = (next.eventLog.size - game.eventLog.size).coerceIn(0, 32)))
+                    val rolled = game.turnPhase == TurnPhase.WAITING_FOR_ROLL
+                    room.copy(revision = room.revision + 1,
+                        members = room.members.map { if (it.uid == actor.uid) it.copy(afkSinceMillis = afkSince) else it },
+                        status = if (automatic.isGameOver) RoomStatus.FINISHED else RoomStatus.PLAYING,
+                        game = automatic.copy(eventLog = automatic.eventLog.takeLast(32)),
+                        actionDeadlineAtMillis = if (automatic.isGameOver) null else now + requireNotNull(room.actionTimeoutMillis),
+                        lastAction = LastAction(if (rolled) "BOT_ROLL" else "BOT_MOVE", actor.uid,
+                            if (rolled) dice else null, (automatic.eventLog.size - game.eventLog.size).coerceIn(0, 32)))
+                }
+                Command.Return -> {
+                    if (room.status != RoomStatus.PLAYING) reject(409, "NOT_PLAYING", "This game is not in progress.")
+                    if (member.resigned) reject(403, "PLAYER_RESIGNED", "Your seat was forfeited. You can watch this game.")
+                    if (member.afkSinceMillis?.let { start -> room.afkTimeoutMillis?.let { now >= start + it } } == true) {
+                        reject(409, "AFK_EXPIRED", "The two-minute AFK deadline passed.")
+                    }
+                    if (member.afkSinceMillis == null) reject(409, "ALREADY_ACTIVE", "You already control your seat.")
+                    val ownTurn = room.controllerUid(requireNotNull(room.game).currentPlayer.color) == uid
+                    room.copy(revision = room.revision + 1,
+                        members = room.members.map { if (it.uid == uid) it.copy(afkSinceMillis = null) else it },
+                        actionDeadlineAtMillis = if (ownTurn) room.actionTimeoutMillis?.let { now + it } else room.actionDeadlineAtMillis,
+                        lastAction = LastAction("RETURN", uid))
                 }
                 Command.Leave -> {
                     if (room.status != RoomStatus.WAITING) reject(409, "ALREADY_STARTED", "The game has started. Rejoin it to continue.")
@@ -96,7 +128,8 @@ class GameController(
                         mode = room.mode
                     )
                     room.copy(revision = room.revision + 1, status = RoomStatus.PLAYING, game = game,
-                        lastAction = LastAction("START", uid))
+                        lastAction = LastAction("START", uid),
+                        actionDeadlineAtMillis = room.actionTimeoutMillis?.let { now + it })
                 }
                 Command.Roll, is Command.Move -> {
                     val game = room.game
@@ -106,6 +139,9 @@ class GameController(
                     if (member.resigned) reject(403, "PLAYER_RESIGNED", "You resigned. You can watch this game.")
                     if (room.controllerUid(game.currentPlayer.color) != uid) {
                         reject(403, "NOT_YOUR_TURN", "Wait for your turn.")
+                    }
+                    if (expiredMember(room, now) != null || room.actionDeadlineAtMillis?.let { now >= it } == true) {
+                        reject(409, "TURN_EXPIRED", "A deadline passed. Refresh the room to resolve the automatic action.")
                     }
                     val next = when (normalized) {
                         Command.Roll -> {
@@ -134,8 +170,10 @@ class GameController(
                         else -> error("Unexpected command")
                     }
                     room.copy(revision = room.revision + 1,
+                        members = room.members.map { if (it.uid == uid) it.copy(afkSinceMillis = null) else it },
                         status = if (next.isGameOver) RoomStatus.FINISHED else RoomStatus.PLAYING,
                         game = next.copy(eventLog = next.eventLog.takeLast(32)),
+                        actionDeadlineAtMillis = if (next.isGameOver) null else room.actionTimeoutMillis?.let { now + it },
                         lastAction = LastAction(if (normalized == Command.Roll) "ROLL" else "MOVE", uid,
                             if (normalized == Command.Roll) dice else null,
                             (next.eventLog.size - game.eventLog.size).coerceIn(0, 32)))
@@ -150,6 +188,44 @@ class GameController(
                     status = RoomStatus.CLOSED, lastAction = LastAction("LEAVE", uid)))
             } else result.also { requireMember(it.room, uid) }
         }
+    }
+
+    private fun expiredMember(room: OnlineRoom, now: Long): Member? {
+        val grace = room.afkTimeoutMillis ?: return null
+        val game = room.game ?: return null
+        val actorUid = room.controllerUid(game.currentPlayer.color)
+        return room.members.filterNot { it.resigned }.mapNotNull { member ->
+            // If nobody checked while the room was abandoned, account for the missed
+            // action from its original start, not from this later HTTP request.
+            val start = member.afkSinceMillis ?: if (member.uid == actorUid)
+                room.actionDeadlineAtMillis?.let { it - requireNotNull(room.actionTimeoutMillis) } else null
+            start?.let { member to (it + grace) }
+        }.filter { (_, deadline) -> now >= deadline }.minByOrNull { it.second }?.first
+    }
+
+    private fun resign(room: OnlineRoom, member: Member, action: String, now: Long): OnlineRoom {
+        val game = room.game
+        if (room.status != RoomStatus.PLAYING || game == null) {
+            reject(409, "NOT_PLAYING", "This game is not in progress.")
+        }
+        if (member.resigned) reject(409, "ALREADY_RESIGNED", "You already resigned. You can watch this game.")
+        val members = room.members.map { if (it.uid == member.uid) it.copy(resigned = true, afkSinceMillis = null) else it }
+        val teammateContinues = room.mode == GameMode.TEAM && members.any {
+            !it.resigned && it.color.teamIndex == member.color.teamIndex
+        }
+        val next = if (teammateContinues) game else
+            GameEngine.forfeit(game, game.players.single { it.color == member.color }.id)
+        val changed = room.copy(revision = room.revision + 1, members = members,
+            status = if (next.isGameOver) RoomStatus.FINISHED else RoomStatus.PLAYING,
+            game = next.copy(eventLog = next.eventLog.takeLast(32)),
+            lastAction = LastAction(action, member.uid, eventCount = (next.eventLog.size - game.eventLog.size).coerceIn(0, 32)))
+        // Giving up an unrelated seat must not extend the current controller's clock.
+        val handoff = room.controllerUid(game.currentPlayer.color) != changed.controllerUid(next.currentPlayer.color)
+        return changed.copy(actionDeadlineAtMillis = when {
+            next.isGameOver -> null
+            handoff -> room.actionTimeoutMillis?.let { now + it }
+            else -> room.actionDeadlineAtMillis
+        })
     }
 
     private fun join(room: OnlineRoom, uid: String, name: String): OnlineRoom {

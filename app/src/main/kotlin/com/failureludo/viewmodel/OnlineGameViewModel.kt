@@ -29,6 +29,7 @@ class OnlineGameViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
     fun retry() = repository.retry()
+    fun returnToGame() = repository.command("RETURN")
     fun resign(confirmedRevision: Long) {
         val session = state.value
         val room = session.room ?: return
@@ -66,7 +67,7 @@ class OnlineGameViewModel(application: Application) : AndroidViewModel(applicati
     private fun canAct(): Boolean {
         val session = state.value
         val room = session.room ?: return false
-        return session.canAct && room.game?.let { room.controllerUid(it.currentPlayer.color) == session.uid } == true &&
+        return session.canPlay && room.game?.let { room.controllerUid(it.currentPlayer.color) == session.uid } == true &&
             room.game?.isGameOver == false
     }
     override fun onCleared() { repository.detach() }

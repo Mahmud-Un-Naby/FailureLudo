@@ -217,9 +217,32 @@ A `6` with no legal move ends the turn without an extra roll. A third consecutiv
   When both teammates resign, the opposing team wins immediately.
 - Resigned players may watch or start another room, but cannot regain control by
   rejoining the old room. Room membership is retained for watching and receipt recovery.
-- Returning to the lobby or losing connection does not resign. Automatic disconnect
-  deadlines are not implemented yet. Offline gameplay and the paused web client do
-  not expose this online resignation flow.
+- Returning to the lobby or losing connection does not explicitly resign. New online
+  games continue their action and AFK timers as described below. Offline gameplay and
+  the paused web client do not expose these online lifecycle controls.
+
+## Online Action Timers and AFK (Android/server, 29 September 2026)
+
+- New rooms give 10 seconds for each dice roll and a separate 10 seconds for each pawn
+  choice. Every bonus roll starts another action window. The server owns these times.
+- After a missed action, the server bot performs that one roll or pawn move using the
+  shared engine and existing heuristic move selector. The next action again gives the
+  human 10 seconds; bot coverage does not permanently convert the seat into a bot.
+- AFK time starts at the beginning of the first missed action window. If the player
+  remains AFK for two minutes, they forfeit their seat. Bot actions, reads, reconnects
+  and retries do not reset this time. AFK expiry also applies between that player's turns.
+- A successful human roll/move clears AFK status. The explicit "I'm back" action clears
+  it before the two-minute deadline, including during another player's turn. Returning
+  during one's own turn preserves the dice/pawns and starts a fresh 10-second window;
+  returning during someone else's turn does not extend that player's timer.
+- AFK forfeiture follows explicit resignation: free-for-all removes the forfeited seat;
+  a remaining teammate takes over both colors, and losing both teammates loses the team.
+- The server checks deadlines transactionally. Android requests automatic checks and
+  shows only confirmed bot/forfeit results. If every app closes, no background game loop
+  runs: overdue checks are resolved on return, without replaying unobserved bot turns.
+- Existing v1/v2 rooms remain untimed during upgrade. New v3 rooms persist the timing
+  policy, action deadline and AFK start times. The online profile avatar displays a
+  decreasing ring for the current action, respecting reduced-motion settings.
 
 ## Bot Piece Selection Priority
 

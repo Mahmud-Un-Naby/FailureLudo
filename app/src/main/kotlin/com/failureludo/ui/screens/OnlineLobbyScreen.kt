@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.failureludo.data.online.OnlineSessionState
 import com.failureludo.engine.GameMode
+import com.failureludo.online.DEFAULT_ACTION_TIMEOUT_MILLIS
 import com.failureludo.online.OnlineRoom
 import com.failureludo.online.RoomStatus
 import com.failureludo.viewmodel.OnlineLobbyViewModel
@@ -43,12 +44,13 @@ fun OnlineLobbyScreen(viewModel: OnlineLobbyViewModel, onBack: () -> Unit, onRoo
                     Button(onClick = viewModel::forgetRoom, enabled = !state.busy && !state.pending) { Text("New room") }
                     if (room.status == RoomStatus.FINISHED) TextButton(onClick = { onRoomReady(room) }) { Text("View result") }
                     else if (room.hasResigned(state.uid)) {
-                        Text("You resigned from this game.")
+                        Text("Your seat was forfeited. You can watch this game.")
                         TextButton(onClick = { onRoomReady(room) }) { Text("Watch game") }
                     }
                 } else Button(onClick = { onRoomReady(room) }, enabled = !state.busy) { Text("Resume room") }
             } else if (state.configured) {
                 Text("Create a room", style = MaterialTheme.typography.titleLarge)
+                Text("${DEFAULT_ACTION_TIMEOUT_MILLIS / 1000} seconds for each roll and pawn choice. A bot covers missed actions. After two minutes AFK, you lose your seat; in team games, your teammate takes over.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(2, 3, 4).forEach { count ->
                         FilterChip(selected = players == count, enabled = !team && !state.busy && !state.pending,
