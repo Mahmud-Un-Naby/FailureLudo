@@ -11,20 +11,24 @@ object RoomCodec {
         .put("code", room.code).put("hostUid", room.hostUid).put("maxPlayers", room.maxPlayers)
         .put("mode", room.mode.name).put("revision", room.revision).put("status", room.status.name)
         .put("members", JSONArray(room.members.map { JSONObject()
-            .put("uid", it.uid).put("name", it.name).put("color", it.color.name) }))
+            .put("uid", it.uid).put("name", it.name).put("color", it.color.name).put("resigned", it.resigned) }))
         .put("game", room.game?.let(::gameStateToJson) ?: JSONObject.NULL)
         .put("lastAction", room.lastAction?.let { JSONObject().put("type", it.type)
             .put("uid", it.uid).put("dice", it.dice ?: JSONObject.NULL).put("eventCount", it.eventCount) } ?: JSONObject.NULL)
 
     fun decode(json: JSONObject): OnlineRoom {
-        if (json.getInt("protocolVersion") != PROTOCOL_VERSION || json.getString("rulesVersion") != RULES_VERSION) {
+        // Read pre-resignation snapshots for stored-room and Android journal upgrades.
+        // All new writes use v2 so older clients fail closed on controller handoff.
+        val legacy = json.getInt("protocolVersion") == 1 && json.getString("rulesVersion") == "2026-09-23"
+        if (!legacy && (json.getInt("protocolVersion") != PROTOCOL_VERSION || json.getString("rulesVersion") != RULES_VERSION)) {
             throw UnsupportedRoomVersion()
         }
         return OnlineRoom(
             code = json.getString("code"), hostUid = json.getString("hostUid"),
             maxPlayers = json.getInt("maxPlayers"), mode = GameMode.valueOf(json.getString("mode")),
             members = json.getJSONArray("members").toObjectList {
-                Member(it.getString("uid"), it.getString("name"), PlayerColor.valueOf(it.getString("color")))
+                Member(it.getString("uid"), it.getString("name"), PlayerColor.valueOf(it.getString("color")),
+                    resigned = if (legacy) false else it.getBoolean("resigned"))
             }, revision = json.getLong("revision"), status = RoomStatus.valueOf(json.getString("status")),
             game = if (json.isNull("game")) null else gameStateFromJson(json.getJSONObject("game")),
             lastAction = if (json.isNull("lastAction")) null else json.getJSONObject("lastAction").let {

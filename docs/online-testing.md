@@ -19,7 +19,8 @@ Kotlin backend. `online-protocol` shares the room model and snapshot codec with 
 Android no longer writes move logs or chooses online dice. Confirmed snapshots drive
 the shared tabletop board, corner dice, movement/capture animation and feedback settings.
 Both free-for-all and four-player team rooms are supported. Offline saves, bots,
-undo/redo and history remain local; online history and resignation are still outstanding.
+undo/redo and history remain local; online history and automatic disconnect handling
+are still outstanding. Active-game resignation is implemented in the update below.
 
 Pending commands and the active room are saved atomically in app-private no-backup
 storage, bound to Firebase UID and service origin. Retrying preserves the request ID,
@@ -43,6 +44,26 @@ startup, non-root execution, unauthenticated rejection and SIGTERM shutdown chec
 The emulator runtime is now cached for reuse. Real Firebase authentication, two-device
 play and device visual/audio review remain unverified. See plan 011 for exact results
 and the remaining lifecycle/operations work.
+
+## Resignation and team handoff — 29 September 2026
+
+Online games now offer an explicit Resign confirmation. In team games the remaining
+teammate controls both colors on the existing turns and keeps any pending dice/move;
+if both resign, their team loses. In free-for-all the resigned player's pawns leave
+play and the last remaining player wins. Resigned players may watch or start a new
+room; they cannot regain control by rejoining. Returning to the lobby still preserves
+an active seat, and disconnecting does not automatically resign.
+
+The server persists resignation atomically with its request receipt. Android keeps an
+unconfirmed resignation across retries/process death and blocks starting another room
+until it is confirmed. Snapshot protocol 2 / rules `2026-09-29` includes resignation;
+v1 stored snapshots and local journals upgrade without losing pending requests. Older
+clients fail closed on v2, so backend/app rollout must be coordinated. See plan 011
+for validation and remaining release work.
+
+Validation: 79 engine, 33 server, four emulator integration and 124 Android tests passed.
+Debug and signed/minified release APKs built with upload-key verification and vital lint.
+Both builds still have no service URL; live online play and device review remain open.
 
 ## Historical branch handoff — 28 September 2026
 

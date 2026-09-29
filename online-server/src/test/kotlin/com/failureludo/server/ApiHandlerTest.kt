@@ -74,6 +74,23 @@ class ApiHandlerTest {
         assertTrue(JSONObject(request(path, body).body()).getBoolean("duplicate"))
     }
 
+    @Test fun `HTTP resignation finishes two player game and retries the same receipt`() {
+        assertEquals(200, request("/v1/rooms", createBody().toString()).statusCode())
+        val path = "/v1/rooms/ABCDEFGH/commands"
+        val join = JSONObject().put("requestId", id()).put("type", "JOIN").put("name", "Guest")
+        assertEquals(200, request(path, join.toString(), "guest").statusCode())
+        assertEquals(200, request(path, command("START", 1).toString()).statusCode())
+        // A caller cannot resign another seat by supplying a player ID.
+        assertEquals(400, request(path, command("RESIGN", 2).put("playerId", 2).toString()).statusCode())
+        val body = command("RESIGN", 2).toString()
+        val response = request(path, body)
+        assertEquals(200, response.statusCode())
+        val room = RoomCodec.decode(JSONObject(response.body()).getJSONObject("room"))
+        assertEquals(RoomStatus.FINISHED, room.status)
+        assertTrue(room.hasResigned("host"))
+        assertTrue(JSONObject(request(path, body).body()).getBoolean("duplicate"))
+    }
+
     @Test fun `storage error causes stay internal to the server`() {
         val cause = IllegalStateException("private storage diagnostic")
         val failure = ApiException(503, "STORE_UNAVAILABLE", "Storage unavailable. Retry with the same request ID.", cause)

@@ -31,6 +31,36 @@ class RoomCodecTest {
             listOf(Member("host", "Host", PlayerColor.RED)), 42, RoomStatus.PLAYING, state, LastAction("ROLL", "host", 6, 2))
         assertEquals(room, RoomCodec.decode(RoomCodec.encode(room)))
     }
+    @Test fun `resignation and team controller ownership survive snapshot round trips`() {
+        val room = OnlineRoom("ABCDEFGH", "host", 4, GameMode.TEAM, listOf(
+            Member("host", "Host", PlayerColor.RED, resigned = true),
+            Member("blue", "Blue", PlayerColor.BLUE), Member("yellow", "Yellow", PlayerColor.YELLOW),
+            Member("green", "Green", PlayerColor.GREEN)), status = RoomStatus.PLAYING,
+            game = GameEngine.newGame(PlayerColor.entries, mode = GameMode.TEAM))
+        val decoded = RoomCodec.decode(RoomCodec.encode(room))
+        assertEquals(room, decoded)
+        assertEquals("yellow", decoded.controllerUid(PlayerColor.RED))
+        assertTrue(decoded.hasResigned("host"))
+        assertTrue(decoded.canForget("host"))
+        assertFalse(decoded.canForget("yellow"))
+        assertFalse(decoded.canResign("host"))
+        assertTrue(decoded.canResign("yellow"))
+    }
+
+    @Test fun `legacy snapshots migrate without inventing resignations or discarding game state`() {
+        val room = OnlineRoom("ABCDEFGH", "host", 2, GameMode.FREE_FOR_ALL,
+            listOf(Member("host", "Host", PlayerColor.RED)), game = GameEngine.newGame(PlayerColor.entries.take(2)))
+        val json = RoomCodec.encode(room).put("protocolVersion", 1).put("rulesVersion", "2026-09-23")
+        json.getJSONArray("members").getJSONObject(0).remove("resigned")
+        val decoded = RoomCodec.decode(json)
+        assertEquals(room, decoded)
+        val upgraded = RoomCodec.encode(decoded)
+        assertEquals(2, upgraded.getInt("protocolVersion"))
+        assertEquals(RULES_VERSION, upgraded.getString("rulesVersion"))
+        assertFalse(upgraded.getJSONArray("members").getJSONObject(0).getBoolean("resigned"))
+        assertThrows(UnsupportedRoomVersion::class.java) { RoomCodec.decode(json.put("rulesVersion", RULES_VERSION)) }
+    }
+
     @Test fun `unsupported protocol and rules fail closed`() {
         val room = OnlineRoom("ABCDEFGH", "host", 2, GameMode.FREE_FOR_ALL, listOf(Member("host", "Host", PlayerColor.RED)))
         for ((key, value) in listOf("protocolVersion" to 999, "rulesVersion" to "unknown")) {

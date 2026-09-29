@@ -83,7 +83,7 @@ Join, `POST /v1/rooms/ABCDEFGH/commands`:
 {"requestId":"unique-request-id-0002","type":"JOIN","name":"Second guest"}
 ```
 
-Start/roll/leave use the same command endpoint:
+Start/roll/leave/resign use the same command endpoint:
 
 ```json
 {"requestId":"unique-request-id-0003","type":"START","expectedRevision":1}
@@ -95,19 +95,34 @@ transfers to the first remaining member; the last exit closes the room. The resp
 contains a sanitized closed-room acknowledgement with no members or game state, even
 for retries. Old create/join receipts do not let a former member read later snapshots.
 
+Resign from an active game, on any turn:
+
+```json
+{"requestId":"unique-request-id-0006","type":"RESIGN","expectedRevision":3}
+```
+
+The verified caller resigns their own membership permanently. In free-for-all their
+seat/pawns leave play and the last remaining player wins. In team mode their teammate
+controls both colors on the existing turns, including any pending pawn choice; normal
+shared-dice unlock rules remain unchanged. If both teammates resign, their team loses.
+`members[].resigned` records the decision. Resigned members retain read access to watch,
+but cannot roll/move or regain control by joining again. Duplicate resignation requests
+return the latest snapshot and original receipt; keep the same request ID after timeout.
+
 Move a pawn using the engine's player ID (1–4) and pawn ID (0–3):
 
 ```json
 {"requestId":"unique-request-id-0005","type":"MOVE","expectedRevision":3,"playerId":1,"pieceId":0,"deferHomeEntry":false}
 ```
 
-`deferHomeEntry: true` chooses continued circulation when legal. The acting player
-always comes from the token and current turn. In team mode the engine determines
+`deferHomeEntry: true` chooses continued circulation when legal. The acting controller
+comes from the token and current turn, including a remaining teammate controlling a
+resigned teammate's color. In team mode the engine determines
 whether a teammate's pawn can be moved. No endpoint accepts a dice value.
 
 A write response contains `room`, `acceptedRevision`, and `duplicate`. Read the current
 snapshot with `GET /v1/rooms/ABCDEFGH`. Only members can read it. Snapshot fields include
-`protocolVersion`, `rulesVersion`, `revision`, `members`, `status`, `game`, and
+`protocolVersion` (2), `rulesVersion` (`2026-09-29`), `revision`, `members`, `status`, `game`, and
 `lastAction`. The game includes every engine field needed for exact restoration.
 The room revision covers lobby changes and individual roll/move commands, not just turns.
 `lastAction.eventCount` identifies the new events at the end of the bounded game event
@@ -154,9 +169,17 @@ sending, using an atomic no-backup journal bound to UID and origin. It retries a
 writes with the same request ID, refreshes an expired token once, and accepts only
 monotonically newer confirmed state. No backend token or private credential is stored.
 
-Active-game resignation/timeouts, matchmaking, permanent action archive, rate limiting
+Automatic disconnect timeouts, matchmaking, permanent action archive, rate limiting
 and cleanup are not implemented. Returning to the lobby during play preserves the seat;
-other players may wait for that player. Recent game events are limited to 32 for
+other players may wait unless the player explicitly resigns. After confirmed resignation,
+the Android lobby offers watching the game or starting a new room. Recent game events are limited to 32 for
 presentation. These gaps and two-device/release validation are tracked in plan 011.
 Receipts must not be deleted while their room can still accept commands. Do not roll
-out incompatible rules under the same rules version; migration is a separate release task.
+out incompatible rules under the same rules version.
+
+Snapshot v2 adds resignation and controller handoff. The new server/app can decode
+v1 snapshots with rules `2026-09-23`, assigning `resigned=false`; every subsequent
+snapshot write uses v2. Android retains pending request IDs while upgrading its local
+journal. Unsupported version pairs fail closed. Older clients/servers cannot read v2:
+upgrade the backend and app together before enabling resignation, with no old server
+revision receiving room traffic. No stored room or receipt is deleted by this change.

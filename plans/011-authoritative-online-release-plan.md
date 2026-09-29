@@ -34,9 +34,9 @@ start promptly but must not permanently advance an unconfirmed game.
    - Include online navigation in release; configure backend URL without debug-only gating.
    - Disable legacy client-write collections as part of coordinated migration.
 3. **Complete multiplayer lifecycle and operations**
-   - Waiting-room leave/host transfer is implemented with Android migration. Specify
-     and implement resignation, disconnect grace periods, deadlines and abandoned-room
-     cleanup, with regression coverage.
+   - Waiting-room leave/host transfer and active-game resignation/team handoff are
+     implemented. Specify and implement disconnect grace periods, deadlines and
+     abandoned-room cleanup, with regression coverage.
    - Add durable action history/replay and rules-version rollout/migration policy.
    - Set quotas/rate limits, abuse controls for guests, receipt retention, monitoring,
      least-privilege service identity, dependency/container maintenance and cost limits.
@@ -58,8 +58,8 @@ with exactly the same command. Its atomic receipt prevents duplicate moves or re
 Mutating existing games requires the confirmed revision; join checks current room
 capacity inside the transaction without exposing the room to nonmembers first.
 
-Room snapshots carry protocol and rules versions. Unsupported stored versions fail
-closed. The server accepts human free-for-all and four-seat team games through the
+Room snapshots carry protocol and rules versions. Known v1 snapshots upgrade to v2
+with no resigned members; unsupported version pairs fail closed. The server accepts human free-for-all and four-seat team games through the
 existing engine. Recent UI events are bounded; they are not a permanent game archive.
 Each accepted operation updates one room revision. A duplicate returns the latest
 snapshot plus the original accepted revision, so clients must apply revisions monotonically.
@@ -177,3 +177,46 @@ repeated. No backend, rules or app deployment/publication occurred.
 Next implementation: active-game resignation/disconnect deadlines, abuse/rate limits,
 cleanup and durable online history. Real identity, two-device reconnect/process-death,
 offline-without-internet and release/device checks remain open before rollout.
+
+
+## Resignation and team control — 29 September 2026
+
+Implemented the next lifecycle increment. The user chose teammate continuation when
+one player resigns from a team game. `RESIGN` is authenticated, revision-checked and
+persisted atomically with its idempotent receipt. Members retain read access to watch,
+but resignation permanently removes command authority; joining again does not undo it.
+
+- Team: the remaining teammate controls both colors on their existing turns. A pending
+  dice roll/pawn choice, consecutive-six count, paired pawns and shared-dice unlock state
+  are preserved. Before unlock, each color's turn still moves only its own pawns. When
+  both teammates resign, the opposing team wins.
+- Free-for-all: the pure engine forfeiture transition makes the resigned seat inactive.
+  Its pawns stop occupying the board. The next active player gets a fresh turn when
+  needed; an unaffected current player keeps their dice and receives recalculated legal
+  moves. The last remaining player wins. Existing offline flows never call forfeiture.
+- Android: an explicit confirmation explains the consequence and is tied to the displayed
+  revision. The same request survives ambiguous failures/process death. Resigned players
+  can watch or start a new room after confirmation. Turn controls and animation highlight
+  follow the controlled color, including a teammate's color. Back/Lobby still preserves
+  a playing seat; connection loss alone does not resign.
+- Snapshot protocol 2 / rules `2026-09-29` carries `members[].resigned`. The decoder accepts
+  legacy protocol 1 / rules `2026-09-23` with no resigned members; subsequent writes use
+  v2. Local journal upgrades retain pending request IDs. Other version pairs fail closed.
+  Backend/app rollout must be coordinated, with older server revisions removed from
+  room traffic; older apps cannot read v2. No live data migration or deployment was run.
+
+Validation: 79 engine tests, 33 server unit tests, four Firestore emulator integration
+tests and 124 Android unit tests passed. Coverage includes pending-turn handoff, rejected
+commands from resigned players, no early team-dice unlock, competing resignations,
+receipt recovery after further play, snapshot round trips and saved-journal upgrades.
+Both debug and signed/minified release APKs built; upload-key verification and release
+vital lint passed. The packaged server distribution also built. The combined verification
+finished successfully in Gradle, then Firebase CLI timed out during shutdown; a focused
+emulator rerun passed and shut down cleanly. Device/visual/audio and real two-device
+testing were not run. Both APKs still have an empty backend URL, so live online play
+is unavailable until an authorized service is configured/deployed. The existing local
+Docker image predates this increment; rebuild it from the updated distribution before use.
+
+Next: disconnect grace periods/turn deadlines, abandoned-room cleanup, abuse/rate limits
+and durable online history. Real Firebase identity and release/device checks remain open.
+No backend/rules deployment or app publication occurred.

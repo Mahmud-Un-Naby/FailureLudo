@@ -345,6 +345,47 @@ object GameEngine {
         }
     }
 
+    /**
+     * Forfeit one FFA player or an entire team. Online controller handoff is handled
+     * outside the engine; call this for TEAM only once both teammates have resigned.
+     * Pawns belonging to forfeited seats leave play; other players keep their roll.
+     */
+    fun forfeit(state: GameState, playerId: PlayerId): GameState {
+        require(!state.isGameOver) { "The game is already over." }
+        val player = requireNotNull(state.players.find { it.id == playerId && it.isActive }) {
+            "Only an active player can forfeit."
+        }
+        val removed = state.players.filter {
+            it.isActive && (it.id == playerId ||
+                (state.mode == GameMode.TEAM && it.color.teamIndex == player.color.teamIndex))
+        }.map { it.id }.toSet()
+        val players = GameRules.normalizePairs(state.players.map {
+            if (it.id in removed) it.copy(isActive = false) else it
+        }, state.mode)
+        val remaining = players.filter { it.isActive }
+        require(remaining.isNotEmpty()) { "A game must retain a winning side." }
+        val next = state.copy(players = players,
+            diceByPlayer = state.diceByPlayer.mapValues { (id, value) -> if (id in removed) null else value })
+        if (state.mode == GameMode.TEAM || remaining.size == 1) {
+            val winners = remaining.map { it.id }
+            return next.copy(turnPhase = TurnPhase.GAME_OVER, winners = winners,
+                lastDice = null, movablePieces = emptyList(),
+                eventLog = next.eventLog + GameEvent.PlayerWon(winners))
+        }
+        if (state.currentPlayer.id in removed) {
+            return advanceToNextTurn(next.copy(movablePieces = emptyList()))
+        }
+        if (state.turnPhase in listOf(TurnPhase.WAITING_FOR_PIECE_SELECTION, TurnPhase.NO_MOVES_AVAILABLE)) {
+            // Removing an opponent's barrier may make previously blocked moves legal.
+            val movable = GameRules.movablePiecesForTurn(next.currentPlayer, requireNotNull(next.lastDice).value,
+                next.players, next.mode, next.sharedTeamDiceEnabled)
+            val refreshed = next.copy(movablePieces = movable,
+                turnPhase = if (movable.isEmpty()) TurnPhase.NO_MOVES_AVAILABLE else TurnPhase.WAITING_FOR_PIECE_SELECTION)
+            return if (movable.isEmpty()) advanceNoMoves(refreshed) else refreshed
+        }
+        return next
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun advanceToNextTurn(state: GameState): GameState {

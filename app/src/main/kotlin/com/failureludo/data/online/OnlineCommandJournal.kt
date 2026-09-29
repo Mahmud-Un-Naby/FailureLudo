@@ -53,8 +53,9 @@ internal class OnlineCommandJournal(private val storage: JournalStorage) {
 
     fun completeExit() { save(requireNotNull(state).copy(room = null, pending = null)) }
     fun rejectPending() { save(requireNotNull(state).copy(pending = null)) }
-    fun forgetFinished() {
+    fun forgetRoom() {
         check(state?.pending == null)
+        check(state?.room?.canForget(state?.uid) == true) { "Finish or resign from this game first." }
         save(requireNotNull(state).copy(room = null))
     }
 

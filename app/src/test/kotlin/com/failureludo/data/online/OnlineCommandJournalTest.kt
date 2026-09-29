@@ -106,6 +106,44 @@ class OnlineCommandJournalTest {
         assertNull(journal().state!!.pending)
     }
 
+    @Test fun `resignation survives response loss and blocks new room until confirmation`() = runBlocking {
+        val first = journal()
+        first.accept(room())
+        assertThrows(IllegalStateException::class.java) { first.forgetRoom() }
+        val pending = first.begin("/v1/rooms/ABCDEFGH/commands", JSONObject().put("type", "RESIGN").put("expectedRevision", 2))
+        try { deliverPending(first) { throw IOException("Lost after commit") } } catch (_: IOException) { }
+        val restored = journal()
+        assertEquals(pending, restored.state!!.pending)
+        val resigned = room(3).copy(status = RoomStatus.PLAYING,
+            members = room().members.map { it.copy(resigned = true) })
+        restored.accept(resigned) // listener can observe acceptance before HTTP retry
+        assertThrows(IllegalStateException::class.java) { restored.forgetRoom() }
+        deliverPending(restored) { request ->
+            assertEquals(pending, request)
+            JSONObject().put("room", RoomCodec.encode(resigned))
+        }
+        assertNull(journal().state!!.pending)
+        assertTrue(journal().state!!.room!!.hasResigned("guest"))
+        restored.forgetRoom()
+        assertNull(journal().state!!.room)
+    }
+
+    @Test fun `legacy saved room upgrades while retaining the exact pending request`() {
+        val first = journal()
+        first.accept(room())
+        val pending = roll(first)
+        val raw = JSONObject(storage.raw!!)
+        val legacy = raw.getJSONObject("room").put("protocolVersion", 1).put("rulesVersion", "2026-09-23")
+        legacy.getJSONArray("members").getJSONObject(0).remove("resigned")
+        storage.raw = raw.toString()
+        val restored = journal()
+        assertEquals(room(), restored.state!!.room)
+        assertEquals(pending, restored.state!!.pending)
+        restored.accept(room(3))
+        assertEquals(PROTOCOL_VERSION, JSONObject(storage.raw!!).getJSONObject("room").getInt("protocolVersion"))
+        assertEquals(pending, journal().state!!.pending)
+    }
+
     @Test fun `corrupt recovery data is surfaced instead of silently discarding a pending move`() {
         storage.raw = "{broken"
         assertThrows(Exception::class.java) { journal() }

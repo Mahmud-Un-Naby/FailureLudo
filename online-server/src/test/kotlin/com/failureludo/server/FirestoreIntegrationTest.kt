@@ -120,6 +120,32 @@ class FirestoreIntegrationTest {
         assertEquals(room, restarted.get("guest", code))
     }
 
+    @Test fun `team resignation persists handoff and retries after another controller moves`() {
+        val api = GameController(FirestoreRoomStore(db), { 6 })
+        var room = api.create("host", id(), "Host", 4, GameMode.TEAM).room
+        val code = room.code
+        for (i in 1..3) room = api.execute("guest$i", code, id(), null, Command.Join("Guest $i")).room
+        room = api.execute("host", code, id(), room.revision, Command.Start).room
+        room = api.execute("host", code, id(), room.revision, Command.Roll).room
+        val revision = room.revision
+        val request = id()
+        val resigned = api.execute("host", code, request, revision, Command.Resign)
+        val restarted = GameController(FirestoreRoomStore(db), { fail("Must reuse the pending dice"); 1 })
+        room = restarted.get("guest2", code)
+        assertTrue(room.hasResigned("host"))
+        assertEquals("guest2", room.controllerUid(com.failureludo.engine.PlayerColor.RED))
+        assertEquals(200, rest("GET", "authoritativeRooms/$code", "host")) // resigned member can watch
+        assertEquals(403, rest("PATCH", "authoritativeRooms/$code", "host"))
+        assertEquals("PLAYER_RESIGNED", assertThrows(ApiException::class.java) {
+            restarted.execute("host", code, id(), room.revision, Command.Move(1, 0, false))
+        }.code)
+        val moved = restarted.execute("guest2", code, id(), room.revision, Command.Move(1, 0, false)).room
+        val retry = api.execute("host", code, request, revision, Command.Resign)
+        assertTrue(retry.duplicate)
+        assertEquals(resigned.acceptedRevision, retry.acceptedRevision)
+        assertEquals(moved, retry.room)
+    }
+
     private fun rest(method: String, document: String, uid: String?): Int {
         val request = HttpRequest.newBuilder(URI("http://$host/v1/projects/$PROJECT/databases/(default)/documents/$document"))
         if (uid != null) request.header("Authorization", "Bearer ${emulatorToken(uid)}")

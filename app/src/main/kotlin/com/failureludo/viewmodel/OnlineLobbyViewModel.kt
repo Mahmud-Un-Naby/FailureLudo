@@ -12,6 +12,6 @@ class OnlineLobbyViewModel(application: Application) : AndroidViewModel(applicat
     fun createRoom(players: Int, mode: GameMode) = repository.create(players, mode)
     fun joinRoom(code: String) = repository.join(code)
     fun retry() = repository.retry()
-    fun forgetFinished() = repository.forgetFinished()
+    fun forgetRoom() = repository.forgetRoom()
     override fun onCleared() { repository.detach() }
 }

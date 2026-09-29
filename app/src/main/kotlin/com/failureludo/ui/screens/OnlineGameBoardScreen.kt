@@ -38,6 +38,8 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
     var presented by remember(roomId) { mutableStateOf<OnlineRoom?>(null) }
     var animating by remember(roomId) { mutableStateOf(false) }
     var rolling by remember(roomId) { mutableStateOf(false) }
+    var actingColor by remember(roomId) { mutableStateOf<PlayerColor?>(null) }
+    var resignRevision by remember(roomId) { mutableStateOf<Long?>(null) }
     var progress by remember { mutableFloatStateOf(1f) }
     val animated = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
     val from = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
@@ -58,6 +60,7 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
                 val consecutive = previous != null && next.revision == previous.revision + 1
                 presented = next
                 if (!consecutive) return@collect
+                actingColor = if (next.lastAction?.type in listOf("ROLL", "MOVE")) previous!!.game!!.currentPlayer.color else null
                 animating = true
                 try {
                     if (next.lastAction?.type == "ROLL") {
@@ -102,7 +105,7 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
                     if (game.isGameOver && !old.isGameOver) feedback.emitSound(FeedbackEvent.WIN, currentSettings)
                 } finally {
                     animated.clear(); from.clear(); captured = emptySet(); captureCells = emptyList()
-                    rolling = false; animating = false; progress = 1f
+                    rolling = false; animating = false; actingColor = null; progress = 1f
                 }
             }
     }
@@ -111,14 +114,19 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
     val game = room?.game
     val latest = session.room
     val caughtUp = room != null && room.revision == latest?.revision
-    val myTurn = game != null && room.members.find { it.uid == session.uid }?.color == game.currentPlayer.color
+    val myTurn = game != null && room.controllerUid(game.currentPlayer.color) == session.uid
+    val resigned = room?.hasResigned(session.uid) == true
+    val canResign = session.canAct && caughtUp && !animating && latest?.canResign(session.uid) == true
     val controls = session.canAct && caughtUp && !animating && myTurn && game?.isGameOver == false
     val movable = if (controls && game?.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION)
         game.movablePieces.map { it.color to it.id }.toSet() else emptySet()
     Column(Modifier.fillMaxSize().background(TabletopStyle.Ink).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { showExit = true }) { Text("Lobby", color = TabletopStyle.Paper) }
-            Text("Room $roomId", color = TabletopStyle.Paper, modifier = Modifier.padding(12.dp))
+            Text("Room $roomId", color = TabletopStyle.Paper, modifier = Modifier.padding(vertical = 12.dp))
+            if (latest?.canResign(session.uid) == true) {
+                TextButton(onClick = { resignRevision = latest.revision }, enabled = canResign) { Text("Resign") }
+            }
         }
         Surface(color = TabletopStyle.Panel, contentColor = TabletopStyle.Paper) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { OnlineConnectionStatus(session, viewModel::retry) }
@@ -126,18 +134,28 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
         if (game == null) {
             Text("Loading your game…", color = TabletopStyle.Paper, modifier = Modifier.padding(24.dp))
         } else {
-            val actor = if (animating) room.members.find { it.uid == room.lastAction?.uid } else null
-            val display = if (actor != null) game.copy(currentPlayerIndex = game.players.indexOfFirst { it.color == actor.color }) else game
-            Text(if (!session.connected) "Waiting for connection" else if (myTurn) "Your turn" else "Waiting for ${game.currentPlayer.name}",
+            val display = if (animating && actingColor != null)
+                game.copy(currentPlayerIndex = game.players.indexOfFirst { it.color == actingColor }) else game
+            val controller = room.members.find { it.uid == room.controllerUid(game.currentPlayer.color) }
+            val turnText = when {
+                game.isGameOver -> "Game over"
+                !session.connected -> "Waiting for connection"
+                resigned -> "You resigned · watching ${game.currentPlayer.color.displayName}'s turn"
+                myTurn -> "Your turn · ${game.currentPlayer.color.displayName}"
+                else -> "Waiting for ${controller?.name ?: game.currentPlayer.name} · ${game.currentPlayer.color.displayName}"
+            }
+            Text(turnText,
                 color = TabletopStyle.Muted, modifier = Modifier.padding(horizontal = 16.dp))
             TabletopGameLayout(state = display, palette = palette,
                 diceValue = if (rolling) room.lastAction?.dice else game.diceByPlayer[game.currentPlayer.id],
                 rollId = room.revision, rolling = rolling, reducedMotion = settings.reducedMotion,
                 canRoll = controls && game.turnPhase == TurnPhase.WAITING_FOR_ROLL,
-                inputBlocked = animating || session.busy || session.pending, onRoll = viewModel::rollDice,
+                inputBlocked = animating || session.busy || session.pending || resignRevision == latest?.revision, onRoll = viewModel::rollDice,
                 statusOverride = when {
                     !session.connected -> "Waiting for connection"
                     session.pending || session.busy -> "Waiting for confirmation"
+                    game.isGameOver -> "Game over"
+                    resigned -> "Watching game"
                     !myTurn && !animating -> "Waiting for opponent"
                     else -> null
                 },
@@ -176,13 +194,30 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
                 TextButton(enabled = canDefer, onClick = { viewModel.resolveHomeEntryChoice(false) }) { Text("Keep circulating") }
             } }, confirmButton = {}, dismissButton = { TextButton(onClick = viewModel::dismissHomeEntryChoice) { Text("Cancel") } })
     }
+    resignRevision?.takeIf { canResign && it == latest?.revision }?.let { revision ->
+        val member = latest!!.members.single { it.uid == session.uid }
+        val teammateContinues = latest.mode == GameMode.TEAM && latest.members.any {
+            it.uid != member.uid && !it.resigned && it.color.teamIndex == member.color.teamIndex
+        }
+        val consequence = when {
+            teammateContinues -> "Your teammate will play both colors on their existing turns."
+            latest.mode == GameMode.TEAM -> "Your team will lose this game."
+            latest.members.count { !it.resigned } == 2 -> "The remaining player will win this game."
+            else -> "Your pawns will leave play. The other players will continue."
+        }
+        AlertDialog(onDismissRequest = { resignRevision = null }, title = { Text("Resign from this game?") },
+            text = { Text("$consequence You can watch afterward, but cannot rejoin as a player.") },
+            confirmButton = { TextButton(onClick = { resignRevision = null; viewModel.resign(revision) }) { Text("Resign") } },
+            dismissButton = { TextButton(onClick = { resignRevision = null }) { Text("Keep playing") } })
+    }
     if (game?.isGameOver == true && !animating && caughtUp) {
         AlertDialog(onDismissRequest = {}, title = { Text("Game over") },
             text = { Text(game.players.filter { it.id in game.winners.orEmpty() }.joinToString(" & ") { it.name } + " wins!") },
             confirmButton = { TextButton(onClick = onGameOver) { Text("Back to lobby") } })
     } else if (showExit) {
         AlertDialog(onDismissRequest = { showExit = false }, title = { Text("Return to lobby?") },
-            text = { Text("Your seat stays in this game. Resume it from the lobby; other players may wait for your turn.") },
+            text = { Text(if (resigned) "You can watch this game again or start a new room from the lobby."
+                else "Your seat stays in this game. Resume it from the lobby; other players may wait for your turn. Use Resign to give up your seat.") },
             confirmButton = { TextButton(onClick = onQuit) { Text("Lobby") } },
             dismissButton = { TextButton(onClick = { showExit = false }) { Text("Stay") } })
     }

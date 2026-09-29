@@ -1,6 +1,6 @@
 # FailureLudo Live Rules
 
-Last updated: 2026-09-23
+Last updated: 2026-09-29
 
 This document defines the agreed game rules. Implementation differences must be
 resolved against these rules; engine behavior does not override an explicit rule decision.
@@ -201,6 +201,25 @@ A `6` with no legal move ends the turn without an extra roll. A third consecutiv
   - no turn advancement or full round of dice passing is required.
   - example: Red has already brought a pawn out. Yellow rolls `6` and brings its first pawn to `26`. Sharing unlocks on that move, so Yellow may use the following bonus roll to move either Red's or Yellow's pawns.
 - After unlock, either teammate can use their rolled dice to move either teammate's pieces, including taking teammate pawns out of `HomeBase`.
+
+## Online Resignation (Android/server, 29 September 2026)
+
+- A player may explicitly resign from an active online game on any turn. The server
+  confirms it against the observed room revision; resignation cannot be undone.
+- Free-for-all: the resigned seat becomes inactive and its pawns leave play. If that
+  was the current turn, the next active seat starts with a fresh roll. Otherwise the
+  current player keeps their roll and legal moves are recalculated without the removed
+  barriers. The last remaining player wins immediately.
+- Team mode: the remaining teammate controls both colors on their existing turns.
+  All pawns, turn order, already-rolled dice, consecutive-six counts, pair membership
+  and shared-dice unlock state remain intact. Before unlock, each color's turn still
+  moves only that color's pawns; controlling both seats does not grant early sharing.
+  When both teammates resign, the opposing team wins immediately.
+- Resigned players may watch or start another room, but cannot regain control by
+  rejoining the old room. Room membership is retained for watching and receipt recovery.
+- Returning to the lobby or losing connection does not resign. Automatic disconnect
+  deadlines are not implemented yet. Offline gameplay and the paused web client do
+  not expose this online resignation flow.
 
 ## Bot Piece Selection Priority
 

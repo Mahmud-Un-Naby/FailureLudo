@@ -59,6 +59,23 @@ class GameController(
                 reject(409, "STALE_REVISION", "Reload the room before sending another action.")
             }
             when (normalized) {
+                Command.Resign -> {
+                    val game = room.game
+                    if (room.status != RoomStatus.PLAYING || game == null) {
+                        reject(409, "NOT_PLAYING", "This game is not in progress.")
+                    }
+                    if (member.resigned) reject(409, "ALREADY_RESIGNED", "You already resigned. You can watch this game.")
+                    val members = room.members.map { if (it.uid == uid) it.copy(resigned = true) else it }
+                    val teammateContinues = room.mode == GameMode.TEAM && members.any {
+                        !it.resigned && it.color.teamIndex == member.color.teamIndex
+                    }
+                    val next = if (teammateContinues) game else
+                        GameEngine.forfeit(game, game.players.single { it.color == member.color }.id)
+                    room.copy(revision = room.revision + 1, members = members,
+                        status = if (next.isGameOver) RoomStatus.FINISHED else RoomStatus.PLAYING,
+                        game = next.copy(eventLog = next.eventLog.takeLast(32)),
+                        lastAction = LastAction("RESIGN", uid, eventCount = (next.eventLog.size - game.eventLog.size).coerceIn(0, 32)))
+                }
                 Command.Leave -> {
                     if (room.status != RoomStatus.WAITING) reject(409, "ALREADY_STARTED", "The game has started. Rejoin it to continue.")
                     val remaining = room.members.filterNot { it.uid == uid }
@@ -86,7 +103,8 @@ class GameController(
                     if (room.status != RoomStatus.PLAYING || game == null) {
                         reject(409, "NOT_PLAYING", "This game is not in progress.")
                     }
-                    if (game.currentPlayer.color != member.color) {
+                    if (member.resigned) reject(403, "PLAYER_RESIGNED", "You resigned. You can watch this game.")
+                    if (room.controllerUid(game.currentPlayer.color) != uid) {
                         reject(403, "NOT_YOUR_TURN", "Wait for your turn.")
                     }
                     val next = when (normalized) {

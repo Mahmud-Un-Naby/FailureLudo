@@ -54,6 +54,7 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
                         }
                         "START" -> { body.only(*common); Command.Start }
                         "LEAVE" -> { body.only(*common); Command.Leave }
+                        "RESIGN" -> { body.only(*common); Command.Resign }
                         "ROLL" -> { body.only(*common); Command.Roll }
                         "MOVE" -> {
                             body.only(*common, "playerId", "pieceId", "deferHomeEntry")

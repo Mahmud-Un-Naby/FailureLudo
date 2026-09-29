@@ -9,6 +9,7 @@ sealed interface Command {
     data object Start : Command
     data object Roll : Command
     data object Leave : Command
+    data object Resign : Command
     data class Move(val playerId: Int, val pieceId: Int, val deferHomeEntry: Boolean) : Command
 }
 

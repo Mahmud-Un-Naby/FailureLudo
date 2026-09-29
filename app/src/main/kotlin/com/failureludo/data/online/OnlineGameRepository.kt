@@ -81,9 +81,9 @@ class OnlineGameRepository private constructor(context: Context) {
         }
     }
 
-    fun forgetFinished() = launchOperation {
-        check(journal!!.state!!.room?.status in listOf(RoomStatus.FINISHED, RoomStatus.CLOSED))
-        journal!!.forgetFinished()
+    fun forgetRoom() = launchOperation {
+        check(journal!!.state!!.room?.canForget(mutable.value.uid) == true)
+        journal!!.forgetRoom()
         watcher?.cancel(); watcher = null; watchedCode = null
     }
 
