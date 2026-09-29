@@ -51,13 +51,13 @@ class FirestoreRoomStore(private val db: Firestore) : RoomStore {
         val causes = generateSequence<Throwable>(error) { it.cause }.toList()
         causes.filterIsInstance<ApiException>().firstOrNull()?.let { throw it }
         causes.filterIsInstance<UnsupportedRoomVersion>().firstOrNull()?.let { throw it }
-        throw ApiException(503, "STORE_UNAVAILABLE", "Storage unavailable. Retry with the same request ID.")
+        throw ApiException(503, "STORE_UNAVAILABLE", "Storage unavailable. Retry with the same request ID.", error)
     } catch (error: TimeoutException) {
         // A timed-out write may still commit. Its receipt makes a retry safe.
-        throw ApiException(503, "STORE_TIMEOUT", "Storage timed out. Retry with the same request ID.")
+        throw ApiException(503, "STORE_TIMEOUT", "Storage timed out. Retry with the same request ID.", error)
     } catch (error: InterruptedException) {
         Thread.currentThread().interrupt()
-        throw ApiException(503, "STORE_INTERRUPTED", "Request interrupted. Retry with the same request ID.")
+        throw ApiException(503, "STORE_INTERRUPTED", "Request interrupted. Retry with the same request ID.", error)
     }
 
     companion object {

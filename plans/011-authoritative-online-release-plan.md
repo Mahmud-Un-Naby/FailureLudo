@@ -17,7 +17,7 @@ start promptly but must not permanently advance an unconfirmed game.
 
 ## Delivery increments
 
-1. **Backend foundation (implemented; integration checks open)**
+1. **Backend foundation (implemented; local integration/container checks passed)**
    - Standalone `online-server` JVM module depends on the existing engine.
    - Authenticated HTTP create/join/start/roll/move/read endpoints, including guests.
    - Cryptographic server dice; engine validation for pawn and home-entry selection.
@@ -141,3 +141,39 @@ live reconnect/process-death scenarios on devices, release/device review and dep
 Waiting-room leave is complete; active-game resignation/disconnect deadlines, abuse/rate
 limits, cleanup and durable online history are the next implementation increment.
 No backend/rules deployment or publication was performed.
+
+## Emulator and container verification — 29 September 2026
+
+The runtime download and container-image network blockers above are resolved.
+Firestore emulator 1.21.0 (138,093,843 bytes) is stored in the default Firebase cache;
+its size and SHA-256 matched the installed Firebase CLI metadata.
+
+The first real integration run exposed a test setup bug: `NoCredentials` selected
+an SDK channel using the default public endpoint rather than the configured emulator.
+The tests now pin both endpoints to numeric loopback and use SDK emulator-only owner
+credentials, without loading application default credentials. The demo-project guard
+remains in place. Separate unsigned guest REST requests continue to test client rules.
+Backend storage exceptions retain their original causes for internal diagnosis; HTTP
+responses retain only the safe error code/message, covered by a new regression test.
+
+Verified:
+
+- Three Firestore integration tests passed: concurrent joins/rolls across independent
+  controllers, durable receipt recovery and request/revision conflicts; member reads
+  versus outsider/unauthenticated reads and forbidden client/legacy writes; leave/host
+  transfer with immediate rule-level access revocation and private receipt retries.
+- All 24 server unit tests passed. `:online-server:installDist` succeeded.
+- `docker build -t failure-ludo-online:local online-server` succeeded using the existing
+  `eclipse-temurin:17-jre` Dockerfile. The resulting image started with dummy local-only
+  credentials, respected custom `PORT=8090`, returned health 200 and unauthenticated
+  room-read 401, ran as UID 10001 and stopped on SIGTERM (exit 143, no forced kill).
+- A separate container check rejected emulator configuration when `K_SERVICE` was set.
+  Temporary smoke-test containers were removed. The local image remains available.
+
+These checks do not validate real Firebase token verification, a deployed service or
+complete Android multiplayer. No Android code changed and APK/device checks were not
+repeated. No backend, rules or app deployment/publication occurred.
+
+Next implementation: active-game resignation/disconnect deadlines, abuse/rate limits,
+cleanup and durable online history. Real identity, two-device reconnect/process-death,
+offline-without-internet and release/device checks remain open before rollout.

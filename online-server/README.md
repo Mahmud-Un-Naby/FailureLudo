@@ -25,8 +25,11 @@ firebase emulators:exec --only firestore --project demo-failure-ludo-server \
   './gradlew -PserverOnly=true :online-server:integrationTest'
 ```
 
-The Firebase CLI and Java 21+ (for the current emulator) are required. Emulator tests refuse non-loopback hosts;
-ordinary unit tests never run integration tests or access a backend.
+The Firebase CLI and Java 21+ (for the current emulator) are required. Emulator tests
+refuse non-loopback hosts, pin both SDK endpoints to numeric loopback,
+and use SDK emulator-only administrator credentials instead of application credentials.
+Separate unsigned guest requests exercise the client rules. Ordinary unit tests never
+run integration tests or access a backend.
 
 ## Run and package
 
@@ -132,8 +135,10 @@ the verified UID. A transaction callback reuses its candidate roll if Firestore 
 Checked-in rules now deny client access to legacy `rooms`/`moves` collections. Data is
 retained. Deploy the rules as part of the coordinated backend/app migration; older
 preview clients (including the paused web client) will no longer write those rooms.
-Emulator regression tests include these denials but their execution remains blocked
-by the runtime download failures recorded in plan 011. Nothing has been deployed.
+Emulator regression tests passed on 29 September 2026, including these denials,
+concurrent commands, durable receipt retries and membership revocation after leaving.
+The local container build and startup checks also passed; see plan 011 for scope.
+Nothing has been deployed.
 
 Android build configuration:
 

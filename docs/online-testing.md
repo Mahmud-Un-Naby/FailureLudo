@@ -37,9 +37,12 @@ Follow [plan 011](../plans/011-authoritative-online-release-plan.md) and the
 [server setup guide](../online-server/README.md) for configuration and remaining work.
 The checked-in Firestore rules now deny legacy `rooms`/`moves` client access; deploy them
 as a coordinated migration with the new backend/app. Legacy data remains intact.
-Nothing has been deployed. Real Firebase authentication, emulator rules/transactions,
-container packaging, two-device play and device visual/audio review remain unverified.
-See plan 011 for exact build/test results and the runtime download blockers.
+Nothing has been deployed. On 29 September 2026, all three local Firestore integration
+checks and 24 server unit tests passed. The server container built and passed local
+startup, non-root execution, unauthenticated rejection and SIGTERM shutdown checks.
+The emulator runtime is now cached for reuse. Real Firebase authentication, two-device
+play and device visual/audio review remain unverified. See plan 011 for exact results
+and the remaining lifecycle/operations work.
 
 ## Historical branch handoff — 28 September 2026
 

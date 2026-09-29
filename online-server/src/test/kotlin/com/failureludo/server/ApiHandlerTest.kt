@@ -74,6 +74,26 @@ class ApiHandlerTest {
         assertTrue(JSONObject(request(path, body).body()).getBoolean("duplicate"))
     }
 
+    @Test fun `storage error causes stay internal to the server`() {
+        val cause = IllegalStateException("private storage diagnostic")
+        val failure = ApiException(503, "STORE_UNAVAILABLE", "Storage unavailable. Retry with the same request ID.", cause)
+        val unavailable = object : RoomStore {
+            override fun get(code: String): OnlineRoom? = throw failure
+            override fun execute(requestKey: String, fingerprint: String, code: String,
+                                 change: (OnlineRoom?) -> OnlineRoom): CommandResult = throw failure
+        }
+        server.removeContext("/")
+        server.createContext("/", ApiHandler(GameController(unavailable), TokenVerifier { "host" }))
+        val response = request("/v1/rooms/ABCDEFGH")
+        assertEquals(503, response.statusCode())
+        val body = JSONObject(response.body())
+        assertEquals(setOf("error", "message"), body.keySet())
+        assertEquals("STORE_UNAVAILABLE", body.getString("error"))
+        assertEquals(failure.message, body.getString("message"))
+        assertFalse(response.body().contains("private storage diagnostic"))
+        assertSame(cause, failure.cause)
+    }
+
     @Test fun `caller cannot inject UID dice or replacement state`() {
         for (field in listOf("uid", "diceValue", "gameState")) {
             val response = request("/v1/rooms", createBody().put(field, "forged").toString())

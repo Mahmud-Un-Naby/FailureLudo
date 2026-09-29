@@ -12,7 +12,8 @@ sealed interface Command {
     data class Move(val playerId: Int, val pieceId: Int, val deferHomeEntry: Boolean) : Command
 }
 
-class ApiException(val status: Int, val code: String, message: String) : RuntimeException(message)
+class ApiException(val status: Int, val code: String, message: String, cause: Throwable? = null) :
+    RuntimeException(message, cause)
 internal fun reject(status: Int, code: String, message: String): Nothing =
     throw ApiException(status, code, message)
 

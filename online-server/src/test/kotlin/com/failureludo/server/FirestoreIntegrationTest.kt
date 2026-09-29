@@ -3,7 +3,6 @@ package com.failureludo.server
 import com.failureludo.online.*
 
 import com.failureludo.engine.GameMode
-import com.google.cloud.NoCredentials
 import com.google.cloud.firestore.Firestore
 import com.google.cloud.firestore.FirestoreOptions
 import org.json.JSONObject
@@ -30,8 +29,15 @@ class FirestoreIntegrationTest {
         require(host.matches(Regex("(127\\.0\\.0\\.1|localhost):[0-9]+"))) {
             "Run integrationTest through firebase emulators:exec with a loopback Firestore emulator"
         }
-        db = FirestoreOptions.newBuilder().setProjectId(PROJECT).setEmulatorHost(host)
-            .setCredentials(NoCredentials.getInstance()).build().service
+        // NoCredentials or a host containing "localhost" selects the SDK's legacy
+        // unauthenticated channel, bypassing emulator owner credentials. Use the
+        // numeric loopback address and emulator-only credentials; never load ADC.
+        host = "127.0.0.1:${host.substringAfter(':')}"
+        val options = FirestoreOptions.newBuilder().setProjectId(PROJECT)
+            .setHost(host).setEmulatorHost(host)
+            .setCredentials(FirestoreOptions.EmulatorCredentials()).build()
+        check(options.host == host && options.emulatorHost == host)
+        db = options.service
     }
     @After fun close() { if (::db.isInitialized) db.close() }
 
@@ -83,6 +89,35 @@ class FirestoreIntegrationTest {
         assertEquals(403, rest("GET", "rooms/legacy", "host"))
         assertEquals(403, rest("PATCH", "rooms/legacy", "host"))
         assertEquals(403, rest("PATCH", "rooms/legacy/moves/0", "host"))
+    }
+
+    @Test fun `leaving revokes snapshot access and receipts stay private after restart`() {
+        val api = GameController(FirestoreRoomStore(db))
+        val createRequest = id()
+        var room = api.create("host", createRequest, "Host", 2, GameMode.FREE_FOR_ALL).room
+        val code = room.code
+        val path = "authoritativeRooms/$code"
+        room = api.execute("guest", code, id(), null, Command.Join("Guest")).room
+        assertEquals(200, rest("GET", path, "host"))
+        assertEquals(200, rest("GET", path, "guest"))
+        val revision = room.revision
+        val leaveRequest = id()
+        val left = api.execute("host", code, leaveRequest, revision, Command.Leave)
+        assertTrue(left.room.members.isEmpty())
+        assertEquals(403, rest("GET", path, "host"))
+        assertEquals(200, rest("GET", path, "guest"))
+        assertEquals("guest", api.get("guest", code).hostUid)
+        room = api.execute("newcomer", code, id(), null, Command.Join("New guest")).room
+        val restarted = GameController(FirestoreRoomStore(db))
+        val retry = restarted.execute("host", code, leaveRequest, revision, Command.Leave)
+        assertTrue(retry.duplicate)
+        assertTrue(retry.room.members.isEmpty())
+        assertNull(retry.room.game)
+        assertEquals(left.acceptedRevision, retry.acceptedRevision)
+        assertEquals("NOT_A_MEMBER", assertThrows(ApiException::class.java) {
+            restarted.create("host", createRequest, "Host", 2, GameMode.FREE_FOR_ALL)
+        }.code)
+        assertEquals(room, restarted.get("guest", code))
     }
 
     private fun rest(method: String, document: String, uid: String?): Int {
