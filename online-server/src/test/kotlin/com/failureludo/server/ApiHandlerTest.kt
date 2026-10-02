@@ -19,13 +19,16 @@ class ApiHandlerTest {
     private lateinit var server: HttpServer
     private val client = HttpClient.newHttpClient()
     private var now = 1_000_000L
+    private var limitRequests = false
     private fun id() = UUID.randomUUID().toString()
     @Before fun start() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/", ApiHandler(GameController(MemoryRoomStore(), { 6 }, { "ABCDEFGH" }, { now }), TokenVerifier {
             if (it !in listOf("host", "guest")) reject(401, "UNAUTHENTICATED", "Invalid test token")
             it
-        }, { now }))
+        }, { now }, RequestLimiter {
+            if (limitRequests) throw ApiException(429, "RATE_LIMITED", "Please wait.", retryAfterSeconds = 30)
+        }))
         server.start()
     }
     @After fun stop() { server.stop(0) }
@@ -40,6 +43,20 @@ class ApiHandlerTest {
         .put("maxPlayers", 2).put("mode", "FREE_FOR_ALL")
     private fun command(type: String, revision: Long = 0) = JSONObject().put("requestId", id())
         .put("type", type).put("expectedRevision", revision)
+
+    @Test fun `authenticated throttling returns retry after without consuming a command`() {
+        val body = createBody().toString()
+        limitRequests = true
+        val limited = request("/v1/rooms", body)
+        assertEquals(429, limited.statusCode())
+        assertEquals("30", limited.headers().firstValue("Retry-After").orElseThrow())
+        assertEquals("RATE_LIMITED", JSONObject(limited.body()).getString("error"))
+        assertEquals(200, request("/healthz", token = null).statusCode())
+        assertEquals(401, request("/v1/rooms", body, "forged").statusCode())
+        limitRequests = false
+        assertFalse(JSONObject(request("/v1/rooms", body).body()).getBoolean("duplicate"))
+        assertTrue(JSONObject(request("/v1/rooms", body).body()).getBoolean("duplicate"))
+    }
 
     @Test fun `health is public but all room endpoints require verified identity`() {
         assertEquals(200, request("/healthz", token = null).statusCode())

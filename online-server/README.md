@@ -207,8 +207,7 @@ sending, using an atomic no-backup journal bound to UID and origin. It retries a
 writes with the same request ID, refreshes an expired token once, and accepts only
 monotonically newer confirmed state. No backend token or private credential is stored.
 
-Matchmaking, permanent action archive, rate limiting and abandoned-room cleanup are not
-implemented. Returning to the lobby keeps a seat but does not pause action/AFK timers.
+Matchmaking and a permanent action archive are not implemented. Returning to the lobby keeps a seat but does not pause action/AFK timers.
 After confirmed forfeiture, the Android lobby offers watching or starting a new room.
 Recent game events are limited to 32 for presentation. Real authentication, two-device
 play and device/release validation remain open. Receipts must not be deleted while
@@ -220,3 +219,51 @@ resignation state. Every subsequent write uses v3. Android retains pending reque
 while upgrading its local journal. Unsupported version pairs fail closed. Older apps
 and servers cannot read v3: coordinate backend/app rollout with no older server revision
 receiving room traffic. No stored room or receipt is deleted by this change.
+
+## Request limits and room maintenance
+
+The service checks a Firestore-backed quota after verifying each identity: 120 HTTP
+requests per 60-second window, including reads, retries and rejected commands. Room
+creation additionally allows 10 successful new rooms per one-hour window. Windows
+start at the first request after the previous window expires. Counters are shared
+across service instances in private `authoritativeLimits` documents (two documents
+per identity, reused across windows). Room creation, its quota charge and receipt
+commit atomically. A creation receipt retry bypasses the creation quota; HTTP retries
+still count against the short request window. Invalid tokens are rejected before
+quota access, and `/healthz` is public and exempt.
+
+Quota rejection returns `429 RATE_LIMITED`, a `Retry-After` duration in seconds and a
+safe message. Keep the pending request ID and retry after that interval. Android
+already retains requests on 429 and displays the wait message. Quota storage failures
+fail closed with 503. These limits control individual authenticated identities; they
+do not prevent abuse through new anonymous accounts, direct snapshot reads or traffic
+before authentication. Edge/App Check protection and cost monitoring remain release
+operations work. Rate checks themselves incur Firestore reads/writes.
+
+New or subsequently written rooms record server-only `createdAtMillis`,
+`lastActivityAtMillis` and, while waiting/playing, `cleanupAtMillis`. A revision-changing
+command renews the inactivity deadline for 24 hours; reads, duplicate receipts and
+an existing member's JOIN do not. Old rooms without maintenance metadata are skipped
+until their next accepted write establishes it. Finished rooms are never expired.
+
+Maintenance uses the same executable, with **dry run as the default**:
+
+```sh
+# Requires the intended GOOGLE_CLOUD_PROJECT and server credentials/environment.
+online-server/build/install/online-server/bin/online-server --cleanup
+# Apply one bounded batch only after reviewing the target environment:
+online-server/build/install/online-server/bin/online-server --cleanup --apply
+```
+
+Each invocation scans at most 100 due rooms. Apply rechecks status and deadline in a
+transaction so a racing player action cannot be overwritten. Eligible waiting or
+unfinished rooms become CLOSED with a new revision, no action deadline and an EXPIRED
+last action. Membership, the last game snapshot and every command receipt remain;
+this does not declare a winner or replace the separate two-minute AFK rule. Android
+returns closed waiting rooms to the lobby and shows a closure dialog during a game.
+
+No timer, public maintenance endpoint, TTL policy or deployed schedule is enabled.
+Configure a private scheduled job only as part of an authorized deployment; repeat
+bounded batches when needed. Cleanup is logical closure, not storage deletion.
+Permanent history/retention and eventual snapshot/receipt/quota deletion need a separate
+policy. Never delete receipts while the associated room can accept commands.

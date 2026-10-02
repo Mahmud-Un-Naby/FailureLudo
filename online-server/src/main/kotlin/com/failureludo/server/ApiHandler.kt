@@ -13,7 +13,8 @@ import java.util.logging.Logger
 fun interface TokenVerifier { fun verify(token: String): String }
 
 class ApiHandler(private val controller: GameController, private val tokens: TokenVerifier,
-                 private val nowMillis: () -> Long = System::currentTimeMillis) : HttpHandler {
+                 private val nowMillis: () -> Long = System::currentTimeMillis,
+                 private val limiter: RequestLimiter = RequestLimiter { }) : HttpHandler {
     override fun handle(exchange: HttpExchange) {
         try {
             val path = exchange.requestURI.path
@@ -28,6 +29,7 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
             val token = authorization.removePrefix("Bearer ").trim()
             if (token.isEmpty()) reject(401, "UNAUTHENTICATED", "A Firebase ID token is required.")
             val uid = tokens.verify(token)
+            limiter.check(uid)
             val segments = path.trim('/').split('/')
             val response = when {
                 path == "/v1/rooms" && exchange.requestMethod == "POST" -> {
@@ -74,6 +76,7 @@ class ApiHandler(private val controller: GameController, private val tokens: Tok
             }
             respond(exchange, 200, response)
         } catch (error: ApiException) {
+            error.retryAfterSeconds?.let { exchange.responseHeaders.set("Retry-After", it.toString()) }
             respond(exchange, error.status, JSONObject().put("error", error.code).put("message", error.message))
         } catch (error: UnsupportedRoomVersion) {
             respond(exchange, 409, JSONObject().put("error", "UNSUPPORTED_VERSION").put("message", error.message))

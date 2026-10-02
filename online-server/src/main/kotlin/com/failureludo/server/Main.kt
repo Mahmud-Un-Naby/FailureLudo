@@ -12,17 +12,30 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
-fun main() {
+fun main(args: Array<String>) {
+    require(args.isEmpty() || args.toList() in listOf(listOf("--cleanup"), listOf("--cleanup", "--apply"))) {
+        "Usage: online-server [--cleanup [--apply]]"
+    }
     val project = requireNotNull(System.getenv("GOOGLE_CLOUD_PROJECT")) { "GOOGLE_CLOUD_PROJECT is required" }
     val port = (System.getenv("PORT") ?: "8080").toInt().also { require(it in 1..65535) }
     // Never accept emulator-issued identities in a deployed Cloud Run service.
-    if (System.getenv("K_SERVICE") != null) {
+    if (System.getenv("K_SERVICE") != null || System.getenv("CLOUD_RUN_JOB") != null) {
         check(System.getenv("FIREBASE_AUTH_EMULATOR_HOST") == null && System.getenv("FIRESTORE_EMULATOR_HOST") == null)
     }
     val app = FirebaseApp.initializeApp(FirebaseOptions.builder()
         .setProjectId(project).setCredentials(GoogleCredentials.getApplicationDefault()).build())
-    val auth = FirebaseAuth.getInstance(app)
     val db = FirestoreClient.getFirestore(app)
+    if (args.firstOrNull() == "--cleanup") {
+        try {
+            val result = FirestoreRoomStore(db).cleanupExpiredRooms(apply = "--apply" in args)
+            println("Cleanup: ${result.candidates} candidates, ${result.closed} closed (maximum 100 per run)")
+        } finally {
+            db.close()
+            app.delete()
+        }
+        return
+    }
+    val auth = FirebaseAuth.getInstance(app)
     val verifier = TokenVerifier { token ->
         try {
             auth.verifyIdToken(token, true).uid
@@ -34,7 +47,7 @@ fun main() {
         ThreadPoolExecutor.AbortPolicy())
     val server = HttpServer.create(InetSocketAddress("0.0.0.0", port), 64)
     server.executor = executor
-    server.createContext("/", ApiHandler(GameController(FirestoreRoomStore(db)), verifier))
+    server.createContext("/", ApiHandler(GameController(FirestoreRoomStore(db)), verifier, limiter = FirestoreRequestLimiter(db)))
     Runtime.getRuntime().addShutdownHook(Thread {
         server.stop(5)
         executor.shutdown()

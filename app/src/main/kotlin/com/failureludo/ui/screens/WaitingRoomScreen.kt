@@ -22,6 +22,7 @@ fun WaitingRoomScreen(roomId: String, viewModel: WaitingRoomViewModel, onGameSta
     BackHandler { confirmLeave = true }
     LaunchedEffect(room?.status, state.busy) {
         if (room?.status == RoomStatus.PLAYING || room?.status == RoomStatus.FINISHED) onGameStarting(roomId)
+        else if (room?.status == RoomStatus.CLOSED) onBack()
         else if (!state.busy && state.uid != null && room == null && !state.pending && state.error == null) onBack()
     }
     Scaffold(topBar = { TopAppBar(title = { Text("Waiting room") }, navigationIcon = {

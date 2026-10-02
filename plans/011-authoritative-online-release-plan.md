@@ -269,3 +269,43 @@ the older local Docker image from the updated distribution before using it.
 
 Remaining: abandoned-room cleanup, rate/abuse limits, durable online history, production
 operations and real-device/release checks. No backend/rules deployment or publication.
+
+## Request limits and abandoned rooms — 2 October 2026
+
+Implemented on `feat/online-testing`:
+
+- Firestore-backed per-identity HTTP quota: 120 authenticated requests per 60-second
+  window, including reads and rejected commands. Room creation has a separate quota
+  of 10 accepted new rooms per hour, charged atomically with the room and receipt.
+  Receipt recovery bypasses the creation quota. HTTP 429 carries `Retry-After`; Android
+  preserves its pending request ID and displays the server's wait message.
+- Private rate-counter documents are denied to clients. Quota state survives service
+  restarts and is shared across instances. Limits do not address anonymous-account
+  churn, direct snapshot-read costs or unauthenticated traffic; edge protection and
+  cost monitoring remain deployment work.
+- Server-only room metadata sets a 24-hour inactivity deadline for waiting/playing
+  rooms. Revision-changing commands renew it; reads, retries and repeated member JOINs
+  do not. Legacy documents acquire metadata on the next accepted write. Finished
+  results do not expire.
+- `online-server --cleanup` previews at most 100 due rooms; `--cleanup --apply` closes
+  a bounded batch. Every closure rechecks current state in a transaction and retains
+  membership, the last game snapshot and all receipts. It creates no winner and does
+  not change the two-minute AFK rule. This is logical closure, not data deletion.
+- Android handles closed waiting rooms, shows closure during a game, disables moves
+  and offers a new room in the lobby. Offline behavior and snapshot protocol remain
+  unchanged. Both service and maintenance-job deployment guards reject emulator env.
+
+No backend/rules deployment, maintenance schedule, TTL policy or publication was
+performed. Remaining work: durable online history and retention/deletion policy,
+production operations, real Firebase authentication, two-device play and device/release
+checks. Existing APKs still need an authorized backend URL for live online play.
+
+Verification: 50 server unit tests, nine Firestore integration tests and 128 Android
+unit tests passed (187 total). Emulator coverage includes cross-instance quota races,
+window boundaries, quota-safe receipt recovery, bounded dry runs, renewed-activity
+races, retained closed snapshots/receipts and finished/legacy-room preservation.
+The final server distribution, debug APK and signed/minified release APK built; release
+vital lint passed. CLI checks rejected invalid arguments and emulator configuration in
+both deployed service/job environments. Documentation links and staged whitespace
+checks passed. No device review, real Firebase authentication or two-device tests ran.
+The local Docker image was not rebuilt in this increment.

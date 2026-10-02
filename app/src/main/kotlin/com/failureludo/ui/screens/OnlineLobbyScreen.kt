@@ -40,10 +40,13 @@ fun OnlineLobbyScreen(viewModel: OnlineLobbyViewModel, onBack: () -> Unit, onRoo
             val room = state.room
             if (room != null) {
                 Text("Room ${room.code} · ${room.members.size}/${room.maxPlayers} players")
+                if (room.status == RoomStatus.CLOSED) {
+                    Text(if (room.lastAction?.type == "EXPIRED") "This room closed after 24 hours without game activity." else "This room is closed.")
+                }
                 if (room.canForget(state.uid)) {
                     Button(onClick = viewModel::forgetRoom, enabled = !state.busy && !state.pending) { Text("New room") }
                     if (room.status == RoomStatus.FINISHED) TextButton(onClick = { onRoomReady(room) }) { Text("View result") }
-                    else if (room.hasResigned(state.uid)) {
+                    else if (room.status == RoomStatus.PLAYING && room.hasResigned(state.uid)) {
                         Text("Your seat was forfeited. You can watch this game.")
                         TextButton(onClick = { onRoomReady(room) }) { Text("Watch game") }
                     }

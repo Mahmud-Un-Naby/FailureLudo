@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
+import com.failureludo.online.RoomStatus
 import com.failureludo.online.OnlineRoom
 import com.failureludo.ui.tabletop.*
 import com.failureludo.viewmodel.OnlineGameViewModel
@@ -117,7 +118,7 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
     val myTurn = game != null && room.controllerUid(game.currentPlayer.color) == session.uid
     val resigned = room?.hasResigned(session.uid) == true
     val canResign = session.canAct && caughtUp && !animating && latest?.canResign(session.uid) == true
-    val controls = session.canPlay && caughtUp && !animating && myTurn && game?.isGameOver == false
+    val controls = latest?.status == RoomStatus.PLAYING && session.canPlay && caughtUp && !animating && myTurn && game?.isGameOver == false
     val movable = if (controls && game?.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION)
         game.movablePieces.map { it.color to it.id }.toSet() else emptySet()
     Column(Modifier.fillMaxSize().background(TabletopStyle.Ink).statusBarsPadding().navigationBarsPadding()) {
@@ -138,6 +139,7 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
                 game.copy(currentPlayerIndex = game.players.indexOfFirst { it.color == actingColor }) else game
             val controller = room.members.find { it.uid == room.controllerUid(game.currentPlayer.color) }
             val turnText = when {
+                latest?.status == RoomStatus.CLOSED -> "Room closed after inactivity"
                 game.isGameOver -> "Game over"
                 !session.connected -> "Waiting for connection"
                 resigned -> "Seat forfeited · watching ${game.currentPlayer.color.displayName}'s turn"
@@ -247,7 +249,11 @@ fun OnlineGameBoardScreen(roomId: String, viewModel: OnlineGameViewModel, onGame
             confirmButton = { TextButton(onClick = { resignRevision = null; viewModel.resign(revision) }) { Text("Resign") } },
             dismissButton = { TextButton(onClick = { resignRevision = null }) { Text("Keep playing") } })
     }
-    if (game?.isGameOver == true && !animating && caughtUp) {
+    if (latest?.status == RoomStatus.CLOSED) {
+        AlertDialog(onDismissRequest = {}, title = { Text("Room closed") },
+            text = { Text("This unfinished room closed after 24 hours without game activity.") },
+            confirmButton = { TextButton(onClick = onGameOver) { Text("Back to lobby") } })
+    } else if (game?.isGameOver == true && !animating && caughtUp) {
         AlertDialog(onDismissRequest = {}, title = { Text("Game over") },
             text = { Text(game.players.filter { it.id in game.winners.orEmpty() }.joinToString(" & ") { it.name } + " wins!") },
             confirmButton = { TextButton(onClick = onGameOver) { Text("Back to lobby") } })

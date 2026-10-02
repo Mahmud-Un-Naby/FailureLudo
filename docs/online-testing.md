@@ -45,6 +45,21 @@ The emulator runtime is now cached for reuse. Real Firebase authentication, two-
 play and device visual/audio review remain unverified. See plan 011 for exact results
 and the remaining lifecycle/operations work.
 
+## Limits and room maintenance — 2 October 2026
+
+The server now shares per-identity request counters across instances: 120 authenticated
+HTTP requests/minute and 10 new rooms/hour. Quota rejection returns 429 with a retry
+duration; the app preserves the same pending command. Duplicate room-creation receipts
+do not spend creation quota. These are identity limits, not protection against anonymous
+account churn or all sources of backend cost.
+
+A private maintenance command can close waiting/unfinished rooms after 24 hours without
+a revision-changing command. It defaults to dry run, rechecks deadlines transactionally
+and retains membership, snapshots and receipts. Finished rooms remain intact. Android
+shows closed-room status and allows returning to the lobby. Old rooms gain expiry
+metadata on their next accepted write. No maintenance schedule or deployment has been
+created. See the [server guide](../online-server/README.md#request-limits-and-room-maintenance).
+
 ## Resignation and team handoff — 29 September 2026
 
 Online games now offer an explicit Resign confirmation. In team games the remaining
